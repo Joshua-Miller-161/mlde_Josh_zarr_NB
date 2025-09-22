@@ -38,7 +38,7 @@ print(" << <<< <<<< Logging setup complete. See", log_file, " >>>> >>> >>>")
 from src import cncsnpp
 from src.lightningModuleEMA import ScoreModelLightningModule
 from src.utils import LossOnlyProgressBar, setup_checkpoint, check_saved_checkpoint, is_main_process, create_model
-from src.data_scripts.collate_v2.data_module import LightningDataModule
+from src.data_scripts.collate_np.data_module import LightningDataModule
 #====================================================================
 def train(config, workdir, filename):
     
@@ -86,14 +86,15 @@ def train(config, workdir, filename):
         model_src_dataset_name=config.data.dataset_name,
         input_transform_dataset_name=config.data.dataset_name,
         input_transform_key=config.data.input_transform_key,
-        target_transform_keys=target_xfm_keys,
+        target_transform_key=config.data.target_transform_key, # Orig, target_transform_keys = target_xfm_keys
         transform_dir=os.path.join(workdir, 'transforms'),
         batch_size=config.training.batch_size,
         filename=filename,
         include_time_inputs=False,
         evaluation=False,
         shuffle=True,
-        num_workers=3
+        num_workers=3,
+        prefetch_factor=3
     )
 
     if config.training.random_crop_size > 0:

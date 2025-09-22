@@ -7,7 +7,8 @@ import time
 
 logger = logging.getLogger()
 
-from ..data_utils import is_main_process, _find_or_create_transforms, datafile_path, open_zarr
+from ..data_utils import is_main_process, datafile_path
+from ...transforms_np import _find_or_create_transforms
 #====================================================================
 def get_xr_dataset(
     active_dataset_name,
@@ -17,7 +18,7 @@ def get_xr_dataset(
     target_transform_keys,
     transform_dir,
     filename,
-    evaluation=False,
+    evaluation=False,   # <— NEW: True = old behavior
 ):
     """
     Returns:

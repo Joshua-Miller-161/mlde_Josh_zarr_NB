@@ -129,24 +129,24 @@ class ScoreModelLightningModule(pl.LightningModule):
         self._batch_counter = 0
         logger.info(" >> INSIDE lightningModuleEMA on_train_epoch_start [rank %d pid %d] on_train_epoch_start", rank, os.getpid())
 
-    def on_train_start(self):
-        rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
-        logger.info(" >> INSIDE lightningModuleEMA on_train_start [rank %d pid %d] cuda_available=%s cuda_count=%d cuda_current=%s CUDA_VISIBLE_DEVICES=%s",
-                    rank, os.getpid(), torch.cuda.is_available(), torch.cuda.device_count(),
-                    torch.cuda.current_device() if torch.cuda.is_available() else None,
-                    os.environ.get("CUDA_VISIBLE_DEVICES"))
+    # def on_train_start(self):
+    #     rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
+    #     logger.info(" >> INSIDE lightningModuleEMA on_train_start [rank %d pid %d] cuda_available=%s cuda_count=%d cuda_current=%s CUDA_VISIBLE_DEVICES=%s",
+    #                 rank, os.getpid(), torch.cuda.is_available(), torch.cuda.device_count(),
+    #                 torch.cuda.current_device() if torch.cuda.is_available() else None,
+    #                 os.environ.get("CUDA_VISIBLE_DEVICES"))
 
-    def on_train_batch_start(self, batch, batch_idx, dataloader_idx=0):
-        rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
-        logger.info(" >> INSIDE lightningModuleEMA on_train_batch_start [rank %d pid %d] on_train_batch_start batch_idx=%s", rank, os.getpid(), batch_idx)
+    # def on_train_batch_start(self, batch, batch_idx, dataloader_idx=0):
+    #     rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
+    #     logger.info(" >> INSIDE lightningModuleEMA on_train_batch_start [rank %d pid %d] on_train_batch_start batch_idx=%s", rank, os.getpid(), batch_idx)
 
-    def on_before_zero_grad(self, optimizer):
-        rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
-        logger.info(" >> INSIDE lightningModuleEMA on_before_zero_grad [rank %d pid %d] on_before_zero_grad", rank, os.getpid())
+    # def on_before_zero_grad(self, optimizer):
+    #     rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
+    #     logger.info(" >> INSIDE lightningModuleEMA on_before_zero_grad [rank %d pid %d] on_before_zero_grad", rank, os.getpid())
 
-    def on_after_backward(self):
-        rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
-        # sync_cuda is optional but may help show memory usage
-        if torch.cuda.is_available():
-            torch.cuda.synchronize()
-        logger.info(" >> INSIDE lightningModuleEMA on_after_backward [rank %d pid %d] on_after_backward cuda_mem=%d", rank, os.getpid(), torch.cuda.memory_allocated() if torch.cuda.is_available() else 0)
+    # def on_after_backward(self):
+    #     rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
+    #     # sync_cuda is optional but may help show memory usage
+    #     if torch.cuda.is_available():
+    #         torch.cuda.synchronize()
+    #     logger.info(" >> INSIDE lightningModuleEMA on_after_backward [rank %d pid %d] on_after_backward cuda_mem=%d", rank, os.getpid(), torch.cuda.memory_allocated() if torch.cuda.is_available() else 0)

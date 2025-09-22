@@ -38,7 +38,8 @@ class LightningDataModule(pl.LightningDataModule):
         include_time_inputs=True,
         evaluation=False,
         shuffle=True,
-        num_workers=0
+        num_workers=0,
+        prefetch_factor=0
     ):
         super().__init__()
         self.active_dataset_name = active_dataset_name
@@ -53,6 +54,7 @@ class LightningDataModule(pl.LightningDataModule):
         self.evaluation = evaluation
         self.shuffle = shuffle
         self.num_workers = num_workers
+        self.prefetch_factor = prefetch_factor 
 
         self.time_range = TIME_RANGE if self.include_time_inputs else None
 
@@ -162,7 +164,8 @@ class LightningDataModule(pl.LightningDataModule):
             pin_memory=True,
             persistent_workers=self.num_workers > 0,
             drop_last=True,
-            **({"prefetch_factor": 1} if self.num_workers > 0 else {}),
+            worker_init_fn=_worker_init_fn,
+            **({"prefetch_factor": self.prefetch_factor} if self.num_workers > 0 else {}),
             **({"multiprocessing_context":ctx} if self.num_workers > 0 else {})
         )
         return data_loader

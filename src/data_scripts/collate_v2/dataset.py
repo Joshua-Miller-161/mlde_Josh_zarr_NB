@@ -12,7 +12,7 @@ from ..data_utils import is_main_process
 class DownscalingDataset(Dataset):
     def __init__(
         self,
-        file_path,            # either xarray.Dataset (for val/test) OR path to .zarr (for training)
+        file_path, # path to .zarr
         variables,
         target_variables,
         time_range,

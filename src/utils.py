@@ -58,8 +58,10 @@ def register_model(cls=None, *, name=None):
     else:
         return _register(cls)
 
+
 def get_model(name):
     return _MODELS[name]
+
 
 def create_model(config):
     """Create the score model."""
@@ -68,6 +70,7 @@ def create_model(config):
     score_model = score_model.to(config.device)
     
     return score_model
+
 
 def get_sigmas(config):
     """Get sigmas --- the set of noise levels for SMLD from config files.
@@ -80,6 +83,7 @@ def get_sigmas(config):
         np.linspace(np.log(config.model.sigma_max), np.log(config.model.sigma_min), config.model.num_scales))
 
     return sigmas
+
 
 def get_ddpm_params(config):
     """Get betas and alphas --- parameters used in the original DDPM paper."""
@@ -140,65 +144,64 @@ def get_model_fn(model, train=False):
 
 
 def get_score_fn(sde, model, train=False, continuous=False):
-  """Wraps `score_fn` so that the model output corresponds to a real time-dependent score function.
+    """Wraps `score_fn` so that the model output corresponds to a real time-dependent score function.
 
-  Args:
-    sde: An `sde_lib.SDE` object that represents the forward SDE.
-    model: A score model.
-    train: `True` for training and `False` for evaluation.
-    continuous: If `True`, the score-based model is expected to directly take continuous time steps.
+    Args:
+        sde: An `sde_lib.SDE` object that represents the forward SDE.
+        model: A score model.
+        train: `True` for training and `False` for evaluation.
+        continuous: If `True`, the score-based model is expected to directly take continuous time steps.
 
-  Returns:
-    A score function.
-  """
-  model_fn = get_model_fn(model, train=train)
+    Returns:
+        A score function.
+    """
+    model_fn = get_model_fn(model, train=train)
 
-  if isinstance(sde, sde_lib.VPSDE) or isinstance(sde, sde_lib.subVPSDE):
-    def score_fn(x, cond, t):
-      # Scale neural network output by standard deviation and flip sign
-      if continuous or isinstance(sde, sde_lib.subVPSDE):
-        # For VP-trained models, t=0 corresponds to the lowest noise level
-        # The maximum value of time embedding is assumed to 999 for
-        # continuously-trained models.
-        labels = t * 999
-        score = model_fn(x, cond, labels)
-        std = sde.marginal_prob(torch.zeros_like(x), t)[1]
-      else:
-        # For VP-trained models, t=0 corresponds to the lowest noise level
-        labels = t * (sde.N - 1)
-        score = model_fn(x, labels)
-        std = sde.sqrt_1m_alphas_cumprod.to(labels.device)[labels.long()]
+    if isinstance(sde, sde_lib.VPSDE) or isinstance(sde, sde_lib.subVPSDE):
+        def score_fn(x, cond, t):
+            # Scale neural network output by standard deviation and flip sign
+            if continuous or isinstance(sde, sde_lib.subVPSDE):
+                # For VP-trained models, t=0 corresponds to the lowest noise level
+                # The maximum value of time embedding is assumed to 999 for
+                # continuously-trained models.
+                labels = t * 999
+                score = model_fn(x, cond, labels)
+                std = sde.marginal_prob(torch.zeros_like(x), t)[1]
+            else:
+                # For VP-trained models, t=0 corresponds to the lowest noise level
+                labels = t * (sde.N - 1)
+                score = model_fn(x, labels)
+                std = sde.sqrt_1m_alphas_cumprod.to(labels.device)[labels.long()]
 
-      score = -score / std[:, None, None, None]
-      return score
+            score = -score / std[:, None, None, None]
+            return score
 
-  elif isinstance(sde, sde_lib.VESDE):
-    def score_fn(x, cond, t):
-      if continuous:
-        labels = sde.marginal_prob(torch.zeros_like(x), t)[1]
-      else:
-        # For VE-trained models, t=0 corresponds to the highest noise level
-        labels = sde.T - t
-        labels *= sde.N - 1
-        labels = torch.round(labels).long()
+    elif isinstance(sde, sde_lib.VESDE):
+        def score_fn(x, cond, t):
+            if continuous:
+                labels = sde.marginal_prob(torch.zeros_like(x), t)[1]
+            else:
+                # For VE-trained models, t=0 corresponds to the highest noise level
+                labels = sde.T - t
+                labels *= sde.N - 1
+                labels = torch.round(labels).long()
 
-      score = model_fn(x, cond, labels)
-      return score
+            score = model_fn(x, cond, labels)
+            return score
 
-  else:
-    raise NotImplementedError(f"SDE class {sde.__class__.__name__} not yet supported.")
-
-  return score_fn
+    else:
+        raise NotImplementedError(f"SDE class {sde.__class__.__name__} not yet supported.")
+    return score_fn
 
 
 def to_flattened_numpy(x):
-  """Flatten a torch tensor `x` and convert it to numpy."""
-  return x.detach().cpu().numpy().reshape((-1,))
+    """Flatten a torch tensor `x` and convert it to numpy."""
+    return x.detach().cpu().numpy().reshape((-1,))
 
 
 def from_flattened_numpy(x, shape):
-  """Form a torch tensor with the given `shape` from a flattened numpy array `x`."""
-  return torch.from_numpy(x.reshape(shape))
+    """Form a torch tensor with the given `shape` from a flattened numpy array `x`."""
+    return torch.from_numpy(x.reshape(shape))
 
 
 def restore_checkpoint(ckpt_dir, state, device):
@@ -269,6 +272,7 @@ class LossOnlyProgressBar(TQDMProgressBar):
             if k in ("train_loss", "val_loss")
         }
 
+
 def setup_checkpoint(config, workdir):
     
     dirpath = os.path.join(workdir, os.path.join('checkpoints', config.data.dataset_name))
@@ -285,6 +289,7 @@ def setup_checkpoint(config, workdir):
     )
 
     return checkpoint_callback, dirpath
+
 
 def check_saved_checkpoint(dirpath):
     ckpt_path = os.path.join(dirpath, "last.ckpt")
@@ -324,7 +329,7 @@ def np_samples_to_xr(np_samples, target_transform, target_vars, coords, cf_data_
 
     pred_dims = ['time', 'lat', 'lon']
 
-    for var_name in list(cf_data_vars.keys()):
+    for var_name in list(target_vars):
         ds = cf_data_vars[var_name]
         sub_ds = ds.sel(time=coords['time'])
 
@@ -359,8 +364,35 @@ def np_samples_to_xr(np_samples, target_transform, target_vars, coords, cf_data_
         samples_ds[var].assign_attrs(pred_attrs)
     return samples_ds
 
+
+def get_xarray_info(ds):
+    lat_variants = ['lat', 'latitude', 'LAT', 'Latitude']
+    lon_variants = ['lon', 'longitude', 'LON', 'Longitude']
+    time_variants = ['time', 'TIME', 'Time']
+
+    # Helper to find matching dimension or coordinate name
+    def find_dim_name(ds, variants):
+        for name in variants:
+            if name in ds.dims or name in ds.coords:
+                return name
+        raise ValueError(f"No matching dimension found for variants: {variants}")
+
+    # Find actual names
+    lat_name = find_dim_name(ds, lat_variants)
+    lon_name = find_dim_name(ds, lon_variants)
+    time_name = find_dim_name(ds, time_variants)
+
+    # Extract values and units
+    lat_values = ds[lat_name].values
+    lon_values = ds[lon_name].values
+    time_values = ds[time_name].values
+
+    lat_units = ds[lat_name].attrs.get('units', 'unknown')
+    lon_units = ds[lon_name].attrs.get('units', 'unknown')
+    time_units = ds[time_name].attrs.get('units', 'unknown')
+
+    return {lat_name: (lat_values, lat_units), lon_name: (lon_values, lon_units), time_name: (time_values, time_units)}
+
+
 def is_main_process():
     return not dist.is_available() or not dist.is_initialized() or dist.get_rank() == 0
-
-
-
