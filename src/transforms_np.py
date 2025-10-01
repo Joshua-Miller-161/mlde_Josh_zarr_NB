@@ -1,4 +1,3 @@
-# transforms_np.py
 import sys
 sys.dont_write_bytecode = True
 import os
@@ -14,6 +13,7 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 from .data_scripts.data_utils import get_variables, open_zarr
+from .utils import input_to_list
 #====================================================================
 # -----------------------
 # save / load transforms
@@ -199,6 +199,125 @@ def _find_or_create_transforms(
     gc.collect()
     return input_transform, target_transform
 
+def _build_transform_per_variable_from_config(
+        filename,
+        variables,
+        active_dataset_name,
+        model_src_dataset_name, 
+        transform_keys_dict, 
+        builder):
+    """
+    Build a transform for each variable individually based on its key in transform_keys_dict.
+    Returns: dict of {variable: fitted_transform}
+    """
+    model_src_ds = open_zarr(model_src_dataset_name, filename)
+    active_ds = open_zarr(active_dataset_name, filename)
+    transforms = {}
+    try:
+        model_src_np = _ensure_numpy_dict(model_src_ds, variables)
+        active_np = _ensure_numpy_dict(active_ds, variables)
+        for v in variables:
+            key = transform_keys_dict.get(v, "none")
+            logger.info(f" >> >> >> INSIDE _build_transform_per_var var: {type(v)} {v}, key: {type(key)} {key}")
+            xfm = builder([v], key)
+            xfm.fit({v: active_np[v]}, {v: model_src_np[v]})
+            transforms[v] = xfm
+    finally:
+        _close_dataset_if_possible(model_src_ds)
+        _close_dataset_if_possible(active_ds)
+        del model_src_np, active_np, model_src_ds, active_ds
+        gc.collect()
+    return transforms
+
+
+def _find_or_create_transforms_per_variable_from_config(
+    filename,
+    active_dataset_name,
+    model_src_dataset_name,
+    transform_dir,
+    config,
+    evaluation,
+):
+    """
+    Use config.data.predictors and config.data.predictands to create one pickle per variable.
+    """
+    input_vars = config.data.predictors.variables
+    input_keys = config.data.predictors.input_transform_keys
+    input_transform_keys_dict = dict(zip(input_vars, input_keys))
+
+    target_vars = config.data.predictands.variables
+    target_keys = config.data.predictands.target_transform_keys
+    target_transform_keys_dict = dict(zip(target_vars, target_keys))
+
+    logger.info("_________________________________________________________________________________________________________")
+    logger.info(f" >> INSIDE transforms_np._find_or_create_transforms_per_var: input_vars {type(input_vars)}, {input_vars}")
+    logger.info(f" >> INSIDE transforms_np._find_or_create_transforms_per_var: input_transform_keys_dict {type(input_transform_keys_dict)}, {input_transform_keys_dict}")
+    logger.info(" - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ")
+    logger.info(f" >> INSIDE transforms_np._find_or_create_transforms_per_var: target_vars {type(target_vars)}, {target_vars}") 
+    logger.info(f" >> INSIDE transforms_np._find_or_create_transforms_per_var: target_transform_keys_dict {type(target_transform_keys_dict)}, {target_transform_keys_dict}")
+    logger.info(" - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ")
+
+    input_transforms = {}
+    target_transforms = {}
+
+    dataset_transform_dir = os.path.join(transform_dir, active_dataset_name)
+    os.makedirs(dataset_transform_dir, exist_ok=True)
+
+    # Build/load input transforms
+    for v in input_vars:
+        input_transform_path = os.path.join(dataset_transform_dir, f"input_{v}_{input_transform_keys_dict[v]}.pickle")
+        if os.path.exists(input_transform_path):
+            start_time = time.time()
+            input_transforms[v] = load_transform(input_transform_path)
+            end_time = time.time()
+            logger.info(" >> >> INSIDE transforms_np._find_or_create_transforms_per_var: |%s| load_transform %.4f seconds", v, end_time-start_time)
+        else:
+            start_time = time.time()
+            xfm = _build_transform_per_variable_from_config(
+                filename,
+                [v],
+                active_dataset_name,
+                model_src_dataset_name,
+                input_transform_keys_dict, 
+                build_input_transform
+            )[v]
+            end_time = time.time()
+            logger.info(" >> >> INSIDE transforms_np._find_or_create_transforms_per_var: |%s| build_transform %.4f seconds", v, end_time-start_time)
+            
+            save_transform(xfm, input_transform_path)
+            input_transforms[v] = xfm
+
+    # Build/load target transforms
+    if evaluation:
+        if target_vars:
+            raise RuntimeError("Target transform should only be fitted during training")
+
+    for v in target_vars:
+        target_transform_path = os.path.join(dataset_transform_dir, f"target_{v}_{target_transform_keys_dict[v]}.pickle")
+        if os.path.exists(target_transform_path):
+            start_time = time.time()
+            target_transforms[v] = load_transform(target_transform_path)
+            end_time = time.time()
+            logger.info(" >> >> INSIDE transforms_np._find_or_create_transforms_per_var: |%s| load_transform %.4f seconds", v, end_time-start_time)
+            
+        else:
+            start_time = time.time()
+            xfm = _build_transform_per_variable_from_config(
+                filename,
+                [v],
+                active_dataset_name,
+                model_src_dataset_name,
+                target_transform_keys_dict,
+                build_target_transform
+            )[v]
+            end_time = time.time()
+            logger.info(" >> >> INSIDE transforms_np._find_or_create_transforms_per_var: |%s| build_transform %.4f seconds", v, end_time-start_time)
+            
+            save_transform(xfm, target_transform_path)
+            target_transforms[v] = xfm
+
+    gc.collect()
+    return input_transforms, target_transforms
 # -----------------------
 # registration utilities
 # -----------------------
@@ -308,7 +427,9 @@ class CropT:
 @register_transform(name="stan")
 class Standardize:
     def __init__(self, variables: Iterable[str]):
-        self.variables = list(variables)
+        logger.info(f" >> >> >> >> INSIDE stan: variables {type(variables)}, {variables}")
+        #self.variables = list(variables)
+        self.variables = input_to_list(variables)
 
     def fit(self, target_ds, model_src_ds):
         t = _ensure_numpy_dict(target_ds, self.variables)
@@ -353,7 +474,8 @@ class Standardize:
 @register_transform(name="pixelstan")
 class PixelStandardize:
     def __init__(self, variables: Iterable[str]):
-        self.variables = list(variables)
+        #self.variables = list(variables)
+        self.variables = input_to_list(variables)
 
     def fit(self, target_ds, model_src_ds):
         t = _ensure_numpy_dict(target_ds, self.variables)
@@ -390,6 +512,11 @@ class PixelStandardize:
 
 @register_transform(name="noop")
 class NoopT:
+    def __init__(self, variables: Iterable[str]):
+        logger.info(f" >> >> >> >> INSIDE NoopT: variables {type(variables)}, {variables}")
+        #self.variables = list(variables)
+        self.variables = input_to_list(variables)
+    
     def fit(self, target_ds, model_src_ds):
         return self
 
@@ -406,7 +533,8 @@ class NoopT:
 @register_transform(name="pixelmmsstan")
 class PixelMatchModelSrcStandardize:
     def __init__(self, variables: Iterable[str]):
-        self.variables = list(variables)
+        #self.variables = list(variables)
+        self.variables = input_to_list(variables)
 
     def fit(self, target_ds, model_src_ds):
         t = _ensure_numpy_dict(target_ds, self.variables)
@@ -477,7 +605,8 @@ class PixelMatchModelSrcStandardize:
 @register_transform(name="mm")
 class MinMax:
     def __init__(self, variables: Iterable[str]):
-        self.variables = list(variables)
+        #self.variables = list(variables)
+        self.variables = input_to_list(variables)
     def fit(self, target_ds, model_src_ds):
         t = _ensure_numpy_dict(target_ds, self.variables)
         self.maxs = {v: np.max(t[v]) for v in self.variables}
@@ -518,7 +647,8 @@ class MinMax:
 @register_transform(name="ur")
 class UnitRangeT:
     def __init__(self, variables: Iterable[str]):
-        self.variables = list(variables)
+        #self.variables = list(variables)
+        self.variables = input_to_list(variables)
     def fit(self, target_ds, model_src_ds):
         t = _ensure_numpy_dict(target_ds, self.variables)
         self.maxs = {v: np.max(t[v]) for v in self.variables}
@@ -554,7 +684,9 @@ class UnitRangeT:
 @register_transform(name="clip")
 class ClipT:
     def __init__(self, variables: Iterable[str]):
-        self.variables = list(variables)
+        logger.info(f" >> >> >> >> INSIDE ClipT: variables {type(variables)}, {variables}")
+        #self.variables = list(variables)
+        self.variables = input_to_list(variables)
     def fit(self, target_ds, model_src_ds):
         return self
     def transform(self, arr, times=None):
@@ -578,7 +710,8 @@ class ClipT:
 @register_transform(name="pc")
 class PercentToPropT:
     def __init__(self, variables: Iterable[str]):
-        self.variables = list(variables)
+        #self.variables = list(variables)
+        self.variables = input_to_list(variables)
     def fit(self, target_ds, _model_src_ds):
         return self
     def transform(self, arr, times=None):
@@ -601,7 +734,8 @@ class PercentToPropT:
 @register_transform(name="recen")
 class RecentreT:
     def __init__(self, variables: Iterable[str]):
-        self.variables = list(variables)
+        #self.variables = list(variables)
+        self.variables = input_to_list(variables)
     def fit(self, target_ds, model_src_ds):
         return self
     def transform(self, arr, times=None):
@@ -624,7 +758,8 @@ class RecentreT:
 @register_transform(name="sqrt")
 class SqrtT:
     def __init__(self, variables: Iterable[str]):
-        self.variables = list(variables)
+        #self.variables = list(variables)
+        self.variables = input_to_list(variables)
     def fit(self, target_ds, model_src_ds):
         return self
     def transform(self, arr, times=None):
@@ -647,7 +782,9 @@ class SqrtT:
 @register_transform(name="root")
 class RootT:
     def __init__(self, variables: Iterable[str], root_base: float):
-        self.variables = list(variables)
+        logger.info(f" >> >> >> >> INSIDE RootT: variables {type(variables)}, {variables}")
+        #self.variables = list(variables)
+        self.variables = input_to_list(variables)
         self.root_base = root_base
     def fit(self, target_ds, model_src_ds):
         return self
@@ -671,7 +808,8 @@ class RootT:
 @register_transform(name="rm")
 class RawMomentT:
     def __init__(self, variables: Iterable[str], root_base: float):
-        self.variables = list(variables)
+        #self.variables = list(variables)
+        self.variables = input_to_list(variables)
         self.root_base = root_base
     def fit(self, target_ds, model_src_ds):
         t = _ensure_numpy_dict(target_ds, self.variables)
@@ -707,7 +845,8 @@ class RawMomentT:
 @register_transform(name="log")
 class LogT:
     def __init__(self, variables: Iterable[str]):
-        self.variables = list(variables)
+        #self.variables = list(variables)
+        self.variables = input_to_list(variables)
     def fit(self, target_ds, model_src_ds):
         return self
     def transform(self, arr, times=None):
@@ -780,10 +919,7 @@ def build_input_transform(variables, key="v1"):
     xfms = [get_transform(name)(variables) for name in key.split(";")]
     return ComposeT(xfms)
 
-def build_target_transform(target_variables, keys):
-    return ComposeT([_build_target_transform(tvar, keys[tvar]) for tvar in target_variables])
-
-def _build_target_transform(target_variable, key):
+def build_target_transform(target_variable, key):
     if key == "v1":
         return ComposeT([SqrtT([target_variable]), ClipT([target_variable]), UnitRangeT([target_variable])])
     if key == "none":
@@ -820,6 +956,50 @@ def _build_target_transform(target_variable, key):
         return ComposeT([RecentreT([target_variable])])
     xfms = [get_transform(name)([target_variable]) for name in key.split(";")]
     return ComposeT(xfms)
+
+
+
+#  WORKS WORKS WORKS WORKS WORKS WORKS
+# def build_target_transform(target_variables, keys):
+#     return ComposeT([_build_target_transform(tvar, keys[tvar]) for tvar in target_variables])
+
+# def _build_target_transform(target_variable, key):
+#     if key == "v1":
+#         return ComposeT([SqrtT([target_variable]), ClipT([target_variable]), UnitRangeT([target_variable])])
+#     if key == "none":
+#         return NoopT()
+#     if key == "sqrt":
+#         return ComposeT([RootT([target_variable], 2), ClipT([target_variable])])
+#     if key == "sqrtur":
+#         return ComposeT([RootT([target_variable], 2), ClipT([target_variable]), UnitRangeT([target_variable])])
+#     if key == "sqrturrecen":
+#         return ComposeT([RootT([target_variable], 2), ClipT([target_variable]), UnitRangeT([target_variable]), RecentreT([target_variable])])
+#     if key == "sqrtrm":
+#         return ComposeT([RootT([target_variable], 2), RawMomentT([target_variable], 2), ClipT([target_variable])])
+#     if key == "cbrt":
+#         return ComposeT([RootT([target_variable], 3), ClipT([target_variable])])
+#     if key == "cbrtur":
+#         return ComposeT([RootT([target_variable], 3), ClipT([target_variable]), UnitRangeT([target_variable])])
+#     if key == "qdrt":
+#         return ComposeT([RootT([target_variable], 4), ClipT([target_variable])])
+#     if key == "log":
+#         return ComposeT([LogT([target_variable]), ClipT([target_variable])])
+#     if key == "logurrecen":
+#         return ComposeT([ClipT([target_variable]), LogT([target_variable]), UnitRangeT([target_variable]), RecentreT([target_variable])])
+#     if key == "stanurrecen":
+#         return ComposeT([Standardize([target_variable]), UnitRangeT([target_variable]), RecentreT([target_variable])])
+#     if key == "stanmmrecen":
+#         return ComposeT([Standardize([target_variable]), MinMax([target_variable]), RecentreT([target_variable])])
+#     if key == "urrecen":
+#         return ComposeT([UnitRangeT([target_variable]), RecentreT([target_variable])])
+#     if key == "mmrecen":
+#         return ComposeT([MinMax([target_variable]), RecentreT([target_variable])])
+#     if key == "pcrecen":
+#         return ComposeT([PercentToPropT([target_variable]), RecentreT([target_variable])])
+#     if key == "recen":
+#         return ComposeT([RecentreT([target_variable])])
+#     xfms = [get_transform(name)([target_variable]) for name in key.split(";")]
+#     return ComposeT(xfms)
 
 
 

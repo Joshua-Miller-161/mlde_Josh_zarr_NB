@@ -32,12 +32,14 @@ import torch
 import torch.nn as nn
 import math
 import functools
+import logging
+logger = logging.getLogger(__name__)
 
 from .layers import get_act, get_timestep_embedding, default_init, ddpm_conv3x3, Upsample, Downsample
 from .layerspp import GaussianFourierProjection, AttnBlockpp, ResnetBlockBigGANpp, ResnetBlockDDPMpp, Combine
 from .utils import get_sigmas, register_model
-from .data_scripts.data_utils import get_variables
-
+#from .data_scripts.data_utils import get_variables
+from .data_scripts.collate_np_per_var import get_variables
 
 @register_model(name="cncsnpp")
 class cNCSNpp(nn.Module):
@@ -131,13 +133,22 @@ class cNCSNpp(nn.Module):
             raise ValueError(f"resblock type {resblock_type} unrecognized.")
 
         # Channel bookkeeping
-        cond_var_channels, output_channels = list(map(len, get_variables(config.data.dataset_name)))
+        # Regular data
+        # cond_var_channels, output_channels = list(map(len, get_variables(config.data.dataset_name)))
+
+        # Per var
+        cond_var_channels, output_channels = list(map(len, get_variables(config)))
         if config.data.time_inputs:
             cond_time_channels = 3
         else:
             cond_time_channels = 0
 
         channels = cond_var_channels + cond_time_channels + output_channels + config.model.loc_spec_channels
+
+        logger.info("&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&")
+        logger.info(" >> >> >> INSIDE cNCSNpp channels: %d, cond_var_channels: %d, cond_time_channels: %d, output_channels: %d, loc_spec_channels: %d", channels, cond_var_channels, cond_time_channels, output_channels, config.model.loc_spec_channels)
+        logger.info("&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&")
+
         if progressive_input != "none":
             input_pyramid_ch = channels
 

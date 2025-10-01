@@ -40,8 +40,8 @@ def get_config():
   sampling.corrector = 'none'
 
   # data
-  data = config.data
-  data.centered = True
+  # data = config.data
+  # data.centered = True
 
   # model
   model = config.model
@@ -70,8 +70,8 @@ def get_config():
   model.conv_size = 3
 
   # data
-  data = config.data
-  data.input_transform_key = "stan"
-  data.target_transform_key = "sqrturrecen"
+  # data = config.data
+  # data.input_transform_key = "stan"
+  # data.target_transform_key = "sqrturrecen"
 
   return config

@@ -275,7 +275,7 @@ class LossOnlyProgressBar(TQDMProgressBar):
 
 def setup_checkpoint(config, workdir):
     
-    dirpath = os.path.join(workdir, os.path.join('checkpoints', config.data.dataset_name))
+    dirpath = os.path.join(workdir, os.path.join('checkpoints', config.data.dataset_name+'_'+config.experiment_name))
     os.makedirs(dirpath, exist_ok=True)
     
     print(" >> INSIDE utils.setup_checkpoint: ", dirpath)
@@ -304,6 +304,32 @@ def check_saved_checkpoint(dirpath):
         ckpt_path = None
     
     return ckpt_path
+
+
+def samples_path(
+    workdir: str,
+    checkpoint: str,
+    input_xfm: str,
+    dataset: str,
+    filename: str,
+    experiment_name = None
+    # ensemble_member: str,
+) -> Path:
+    filename = filename.split('.')[0] # Remove .blahblah from end
+    checkpoint = checkpoint.split('.')[0]
+    
+    if ((experiment_name == '') or (type(experiment_name) == None)):
+        dataset=dataset
+    else:
+        dataset += '-'+str(experiment_name)
+    return Path(
+        workdir,
+        "samples", 
+        dataset,
+        input_xfm,
+        checkpoint,
+        filename
+        )
 
 
 def make_predictions_filename(directory, config, prefix="predictions"):
@@ -392,6 +418,27 @@ def get_xarray_info(ds):
     time_units = ds[time_name].attrs.get('units', 'unknown')
 
     return {lat_name: (lat_values, lat_units), lon_name: (lon_values, lon_units), time_name: (time_values, time_units)}
+
+
+def input_to_list(var):
+    # If input is a string, wrap in a list
+    if isinstance(var, str):
+        return [var]
+    # If input is a list or tuple, flatten one level and ensure all elements are strings
+    elif isinstance(var, (list, tuple)):
+        # Flatten if it's a nested list of strings
+        flat = []
+        for item in var:
+            if isinstance(item, str):
+                flat.append(item)
+            elif isinstance(item, (list, tuple)):
+                # Only flatten one level deep
+                flat.extend(item)
+            else:
+                raise ValueError(f"Unsupported type in list: {type(item)}")
+        return flat
+    else:
+        raise ValueError(f"Unsupported input type: {type(var)}")
 
 
 def is_main_process():

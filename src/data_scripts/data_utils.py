@@ -41,16 +41,16 @@ def dataset_path(dataset: str, base_dir: str = None) -> Path:
 def datafile_path(dataset: str, filename: str, base_dir: str = None) -> Path:
     return dataset_path(dataset, base_dir=base_dir) / filename
 #====================================================================
-def dataset_config_path(dataset: str, base_dir: str = None) -> Path:
+# def dataset_config_path(dataset: str, base_dir: str = None) -> Path:
 
-    print(" >> >> INSIDE dataset_config_path", dataset_path(dataset, base_dir=base_dir) / "ds-config.yml")
-    logger.info(f" >> >> INSIDE dataset_config_path {dataset_path(dataset, base_dir=base_dir)} / ds-config.yml")
+#     print(" >> >> INSIDE dataset_config_path", dataset_path(dataset, base_dir=base_dir) / "ds-config.yml")
+#     logger.info(f" >> >> INSIDE dataset_config_path {dataset_path(dataset, base_dir=base_dir)} / ds-config.yml")
 
-    return dataset_path(dataset, base_dir=base_dir) / "ds-config.yml"
+#     return dataset_path(dataset, base_dir=base_dir) / "ds-config.yml"
 #====================================================================
-def dataset_config(dataset: str, base_dir: str = None) -> dict:
-    with open(dataset_config_path(dataset, base_dir=base_dir), "r") as f:
-        return yaml.safe_load(f)
+# def dataset_config(dataset: str, base_dir: str = None) -> dict:
+#     with open(dataset_config_path(dataset, base_dir=base_dir), "r") as f:
+#         return yaml.safe_load(f)
 #====================================================================
 def open_zarr(dataset_name, filename):
     rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
@@ -93,6 +93,15 @@ def get_variables(dataset_name):
     )
 
     #print(" >> >> target_variables", target_variables)
+    return variables, target_variables
+#====================================================================
+def get_variables_per_var(config):
+    print(" >> >> INSIDE get_variables_per_var")
+    logger.info(" >> >> INSIDE get_variables_per_var")
+    
+    variables = config.data.predictors.variables #predictors.get("variables", [])
+    target_variables = config.data.predictands.variables
+
     return variables, target_variables
 #====================================================================
 def _build_transform(

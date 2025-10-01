@@ -36,7 +36,8 @@ config_flags.DEFINE_config_file(
 flags.DEFINE_string("workdir", None, "Work directory.")
 flags.DEFINE_enum("mode", None, ["train"], "Running mode: train")
 flags.DEFINE_string("filename", None, "File to train on")
-flags.mark_flags_as_required(["workdir", "config", "mode"])
+flags.DEFINE_string("val_filename", None, "File containing the validation data")
+flags.mark_flags_as_required(["workdir", "config", "mode", "filename", "val_filename"])
 
 def main(argv):
     if FLAGS.mode == "train":
@@ -44,7 +45,7 @@ def main(argv):
         os.makedirs(FLAGS.workdir, exist_ok=True)
 
         # Run the training pipeline
-        run_lib.train(FLAGS.config, FLAGS.workdir, FLAGS.filename)
+        run_lib.train(FLAGS.config, FLAGS.workdir, FLAGS.filename, FLAGS.val_filename)
     else:
         raise ValueError(f"Mode {FLAGS.mode} not recognized.")
 

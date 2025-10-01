@@ -5,6 +5,7 @@ def get_default_configs():
     print(" >> inside configs.default_josh_config.py")
 
     config = ml_collections.ConfigDict()
+    config.experiment_name = 'Rerun'
     # training
     config.training = training = ml_collections.ConfigDict()
     config.training.batch_size = 12 #128
@@ -62,6 +63,22 @@ def get_default_configs():
     data.input_transform_dataset = None
     data.input_transform_key = "stan"
     data.target_transform_key = "sqrturrecen"
+
+    
+    data.predictands = ml_collections.ConfigDict()
+    data.predictands.variables = ["precipitation"]
+    data.predictands.target_transform_keys = ["sqrturrecen"]
+
+    data.predictors = ml_collections.ConfigDict()
+    #data.predictors.variables = ["specHum850", "specHum700", "specHum500", "specHum250", "temp850", "temp700", "temp500", "temp250", "vort850", "vort700", "vort500", "vort250", "mslp"]
+    #data.predictors.input_transform_keys = ["stan", "stan", "stan", "stan", "stan", "stan", "stan", "stan", "stan", "stan", "stan", "stan", "stan"]
+
+    data.predictors.variables = ["specHum850", "specHum700", "specHum500", "specHum250", "temp850", "temp700", "temp500", "temp250", "vort850", "vort700", "vort500", "vort250", "mslp", "elevation"]
+    data.predictors.input_transform_keys = ["stan", "stan", "stan", "stan", "stan", "stan", "stan", "stan", "stan", "stan", "stan", "stan", "stan", "mm"]
+
+    #data.predictors.variables =            ["relHum850", "relHum700", "relHum500", "relHum250", "u-wind850", "u-wind700", "u-wind500", "u-wind250", "v-wind850", "v-wind700", "v-wind500", "v-wind250", "specHum850", "specHum700", "specHum500", "specHum250", "temp850", "temp700", "temp500", "temp250", "vort850", "vort700", "vort500", "vort250", "mslp", "elevation", "land_sea_mask"]
+    #data.predictors.input_transform_keys = ["stan",      "stan",      "stan",      "stan",      "stan",      "stan",      "stan",       "stan",     "stan",      "stan",      "stan",      "stan",      "stan",       "stan",       "stan",       "stan",       "stan",    "stan",    "stan",    "stan",    "stan",    "stan",     "stan",   "stan",    "stan", "mm",        "noop"]
+
     data.target_transform_overrides = ml_collections.ConfigDict()
     data.time_inputs = False
 
