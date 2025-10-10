@@ -25,13 +25,11 @@ import numpy as np
 
 sys.path.append(os.getcwd())
 from configs.subvpsde.ukcp_local_pr_1em_cncsnpp_continuous import get_config
-from src.utils import make_predictions_filename, get_xarray_info, samples_path
+from src.utils import make_predictions_filename, get_xarray_info, samples_path, load_sampling_config
 
 #from src.data_scripts.collate_np.data_module import LightningDataModule
 from src.data_scripts.collate_np_per_var.data_module import LightningDataModule
 
-from src.optimizers import get_optimizer
-from src.ema import ExponentialMovingAverage
 from src.lightningModuleEMA import ScoreModelLightningModule
 from src.cncsnpp import cNCSNpp  # noqa: F401
 from sampling import get_sampling_fn
@@ -45,13 +43,6 @@ logging.basicConfig(
     format="%(levelname)s - %(filename)s - %(asctime)s - %(message)s",
 )
 logger = logging.getLogger()
-
-def load_config(config_path):
-    logger.info(f"Loading config from {config_path}")
-    with open(config_path) as f:
-        config = config_dict.ConfigDict(yaml.unsafe_load(f))
-
-    return config
 
 app = typer.Typer(pretty_exceptions_enable=False, rich_markup_mode=None)
 
@@ -238,19 +229,21 @@ def sample(sampling_fn, score_model, config, eval_dl, target_transform, target_v
 @app.command()
 @Timer(name="sample", text="{name}: {minutes:.1f} minutes", logger=logger.info)
 def main(
-    workdir: Path,
-    dataset: str = typer.Option(...),
-    filename: str = "val",
-    checkpoint: str = typer.Option(...),
-    batch_size: int = None,
-    num_samples: int = 3,
-    input_transform_dataset: str = None,
-    input_transform_key: str = None,
-    num_scales: int = None,
-    experiment_name: str = None
+    filename: str = typer.Option(..., help="Path to input file"),
+    checkpoint: str = typer.Option(..., help="Path to model checkpoint"),
+    dataset: str = typer.Option("zarr", help="Dataset type"),
+    batch_size: int = typer.Option(100, help="Batch size"),
+    num_samples: int = typer.Option(5, help="Number of samples to generate"),
+    input_transform_dataset: str = typer.Option("zarr", help="Transform dataset"),
+    input_transform_key: str = typer.Option(None, help="Transform key"),
+    num_scales: int = typer.Option(250, help="Number of diffusion steps during de-noising"),
+    experiment_name: str = typer.Option(None, help="Experiment name"),
+    workdir: str = typer.Option("/gws/nopw/j04/bris_climdyn/j_miller/temp", help="Working directory")
 ):
     print(" >> INSIDE predict_L.main input_transform_dataset", input_transform_dataset)
-    config = get_config()
+    
+    train_config = get_config()
+    config = load_sampling_config(workdir, dataset, train_config, experiment_name)
 
     with config.unlocked():
         if num_scales is not None:
@@ -261,6 +254,12 @@ def main(
         
         if (dataset is not None) or (dataset != ''):
             config.data.dataset_name = dataset
+        
+        if (experiment_name is not None) or (experiment_name != ''):
+            config.experiment_name = train_config.experiment_name
+        if (experiment_name in [None, '']):
+            experiment_name = train_config.experiment_name
+            config.experiment_name = train_config.experiment_name
         
         if input_transform_dataset is not None:
             config.data.input_transform_dataset = dataset
@@ -273,11 +272,12 @@ def main(
     print(" >> INSIDE predict_L config.model.num_scales", config.model.num_scales, ", config.sampling.num_scales", config.sampling.num_scales)
     print(" >> INSIDE predict_L.main config.data.input_transform_dataset", config.data.input_transform_dataset)
 
+    logger.info(f" >> >> workdir: {workdir}, checkpoint: {checkpoint}, dataset: {dataset}, filename: {filename}, experiment_name: {experiment_name}")
+
     output_dirpath = samples_path(
         workdir=workdir,
         checkpoint=checkpoint,
         dataset=dataset,
-        input_xfm=f"{config.data.input_transform_dataset}-{config.data.input_transform_key}",
         filename=filename,
         experiment_name=experiment_name
     )
@@ -326,7 +326,7 @@ def main(
         x_init = next(iter(eval_dl))
         config.data.image_size = x_init[0].shape[-1]
 
-    ckpt_filename = os.path.join(workdir, "checkpoints", config.data.dataset_name+'_'+config.experiment_name, checkpoint)
+    ckpt_filename = os.path.join(workdir, "checkpoints", config.data.dataset_name, config.experiment_name, checkpoint)
     logger.info(f"Loading model from {ckpt_filename}")
     score_model, sampling_fn, target_var = load_model(config, ckpt_filename)
 

@@ -150,7 +150,7 @@ class FastCollate:
                     targs[:, j, :, :] = tvar_stack
 
             end_time = clock.time()
-            logger.debug("FastCollate: stacked batch (rank %d pid %d) concat time: %s", rank, os.getpid(), str(round(end_time - start_time, 7)))
+            #logger.debug(" >> >> INSIDE FastCollate: stacked batch (rank %d pid %d) concat time: %s", rank, os.getpid(), str(round(end_time - start_time, 7)))
 
             # apply per-variable transforms (vectorized across batch)
             # For input transforms: iterate over input_vars and transform conds[:,i,...]
@@ -176,7 +176,7 @@ class FastCollate:
                         else:
                             raise RuntimeError("Unexpected transformed shape for input var %s: %s" % (v, str(transformed.shape)))
             end_time = clock.time()
-            logger.info(" >> >> INSIDE FastCollate: input transforms applied (rank %d pid %d) time: %s", rank, os.getpid(), str(round(end_time - start_time, 7)))
+            #logger.info(" >> >> INSIDE FastCollate: input transforms applied (rank %d pid %d) time: %s", rank, os.getpid(), str(round(end_time - start_time, 7)))
 
             # apply target transforms
             start_time = clock.time()
@@ -196,7 +196,7 @@ class FastCollate:
                         else:
                             raise RuntimeError("Unexpected transformed shape for target var %s: %s" % (v, str(transformed_t.shape)))
             end_time = clock.time()
-            logger.info(" >> >> INSIDE FastCollate: target transforms applied (rank %d pid %d) time: %s", rank, os.getpid(), str(round(end_time - start_time, 7)))
+            #logger.info(" >> >> INSIDE FastCollate: target transforms applied (rank %d pid %d) time: %s", rank, os.getpid(), str(round(end_time - start_time, 7)))
 
             # add time channels if requested
             if self.time_range is not None:

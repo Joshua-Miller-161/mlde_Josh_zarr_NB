@@ -5,7 +5,7 @@ def get_default_configs():
     print(" >> inside configs.default_josh_config.py")
 
     config = ml_collections.ConfigDict()
-    config.experiment_name = 'Rerun'
+    config.experiment_name = 'Elev'
     # training
     config.training = training = ml_collections.ConfigDict()
     config.training.batch_size = 12 #128

@@ -34,12 +34,28 @@ from pathlib import Path
 import numpy as np
 import torch.distributed as dist
 import xarray as xr
+from typing import Any
+import os
+import json
+import ml_collections
+import torch
 
-#from torchview import draw_graph
+logger = logging.getLogger()
 
+try:
+    import yaml
+    _HAS_YAML = True
+except Exception:
+    _HAS_YAML = False
+
+try:
+    import numpy as _np
+    _HAS_NUMPY = True
+except Exception:
+    _HAS_NUMPY = False
+#====================================================================
 _MODELS = {}
-
-
+#====================================================================
 def register_model(cls=None, *, name=None):
     """A decorator for registering model classes."""
 
@@ -219,10 +235,12 @@ def restore_checkpoint(ckpt_dir, state, device):
         state["location_params"].load_state_dict(loaded_state["location_params"])
         state["step"] = loaded_state["step"]
         state["epoch"] = loaded_state["epoch"]
-        logging.info(
-            f"Checkpoint found at {ckpt_dir}. "
-            f"Returned the state from {state['epoch']}/{state['step']}"
+        logger.info("    - -  -   -    -     -      -      -     -    -   -  - -")
+        logger.info(
+            f" >> Checkpoint found at {ckpt_dir}. "
+            f" >> Returned the state from {state['epoch']}/{state['step']}"
         )
+        logger.info("    - -  -   -    -     -      -      -     -    -   -  - -")
         return state, True
 
 
@@ -274,11 +292,15 @@ class LossOnlyProgressBar(TQDMProgressBar):
 
 
 def setup_checkpoint(config, workdir):
+    if ((config.experiment_name == '') or (config.experiment_name == None)):
+        dirpath = os.path.join(workdir, 'checkpoints', config.data.dataset_name)
+    else:
+        dirpath = os.path.join(workdir, 'checkpoints', config.data.dataset_name, config.experiment_name)
     
-    dirpath = os.path.join(workdir, os.path.join('checkpoints', config.data.dataset_name+'_'+config.experiment_name))
     os.makedirs(dirpath, exist_ok=True)
     
-    print(" >> INSIDE utils.setup_checkpoint: ", dirpath)
+    logger.info(" >> INSIDE utils.setup_checkpoint: %s", str(dirpath))
+    
     checkpoint_callback = ModelCheckpoint(
         dirpath=dirpath,
         filename=config.model.name+'-'+config.training.sde+"-{epoch}",
@@ -297,10 +319,13 @@ def check_saved_checkpoint(dirpath):
     if os.path.exists(ckpt_path):
         checkpoint = torch.load(ckpt_path, map_location="cpu")
         last_epoch = checkpoint.get("epoch", "Not found")
-        print(f" >> RESUMING TRAINING FROM EPOCH: {last_epoch}")
-        print(" >> >>", ckpt_path)
+        logger.info("    - -  -   -    -     -      -      -     -    -   -  - -")
+        logger.info(" >> RESUMING TRAINING FROM EPOCH: %s %s", str(last_epoch), str(ckpt_path))
+        logger.info("    - -  -   -    -     -      -      -     -    -   -  - -")
     else:
-        print(" >> NO CHECKPOINT FOUND AT", ckpt_path, " TRAINING FROM SCRATCH")
+        logger.info("    - -  -   -    -     -      -      -     -    -   -  - -")
+        logger.info(" >> NO CHECKPOINT FOUND AT %s TRAINING FROM SCRATCH", str(ckpt_path))
+        logger.info("    - -  -   -    -     -      -      -     -    -   -  - -")
         ckpt_path = None
     
     return ckpt_path
@@ -309,27 +334,31 @@ def check_saved_checkpoint(dirpath):
 def samples_path(
     workdir: str,
     checkpoint: str,
-    input_xfm: str,
     dataset: str,
     filename: str,
-    experiment_name = None
-    # ensemble_member: str,
-) -> Path:
+    experiment_name = None) -> Path:
     filename = filename.split('.')[0] # Remove .blahblah from end
     checkpoint = checkpoint.split('.')[0]
     
     if ((experiment_name == '') or (type(experiment_name) == None)):
-        dataset=dataset
+        return Path(workdir, "samples", dataset, filename, checkpoint)
     else:
-        dataset += '-'+str(experiment_name)
-    return Path(
-        workdir,
-        "samples", 
-        dataset,
-        input_xfm,
-        checkpoint,
-        filename
-        )
+        return Path(workdir, "samples", dataset, filename, checkpoint, experiment_name)
+
+
+def load_sampling_config(workdir, dataset, train_config, experiment_name=None):
+    if ((experiment_name == None) or (experiment_name == '')):
+        if ((train_config.experiment_name == None) or (train_config.experiment_name == '')):
+            config = load_config(os.path.join(workdir, 'checkpoints', dataset, 'config.yml'))
+            logger.info(" >> >> INSIDE utils: sampling config: %s", os.path.join(workdir, 'checkpoints', dataset, 'config.yml'))
+        else:
+            config = load_config(os.path.join(workdir, 'checkpoints', dataset, train_config.experiment_name, 'config.yml'))
+            logger.info(" >> >> INSIDE utils: sampling config: %s", os.path.join(workdir, 'checkpoints', dataset, train_config.experiment_name, 'config.yml'))
+    else:
+        config = load_config(os.path.join(workdir, 'checkpoints', dataset, experiment_name, 'config.yml'))
+        logger.info(" >> >> INSIDE utils: sampling config: %s", os.path.join(workdir, 'checkpoints', dataset, experiment_name, 'config.yml'))
+
+    return config
 
 
 def make_predictions_filename(directory, config, prefix="predictions"):
@@ -439,6 +468,130 @@ def input_to_list(var):
         return flat
     else:
         raise ValueError(f"Unsupported input type: {type(var)}")
+
+
+def _to_primitive(obj: Any) -> Any:
+    """
+    Convert obj recursively into JSON/YAML-serializable primitives.
+    Special-case: torch.device -> device.type (e.g. "cuda", "cpu").
+    """
+    # ml_collections.ConfigDict -> dict
+    if isinstance(obj, ml_collections.ConfigDict):
+        return {k: _to_primitive(v) for k, v in obj.items()}
+
+    # dict
+    if isinstance(obj, dict):
+        return {k: _to_primitive(v) for k, v in obj.items()}
+
+    # tuple -> list
+    if isinstance(obj, tuple):
+        return [_to_primitive(v) for v in obj]
+
+    # list
+    if isinstance(obj, list):
+        return [_to_primitive(v) for v in obj]
+
+    # torch.device -> simple string of device type
+    if isinstance(obj, torch.device):
+        # per your request: store only 'cuda', 'cpu', etc.
+        return obj.type
+
+    # numpy scalars / arrays
+    if _HAS_NUMPY:
+        if isinstance(obj, _np.generic):
+            try:
+                return obj.item()
+            except Exception:
+                return str(obj)
+        if isinstance(obj, _np.ndarray):
+            try:
+                return obj.tolist()
+            except Exception:
+                return str(obj)
+
+    # primitives
+    if isinstance(obj, (str, int, float, bool, type(None))):
+        return obj
+
+    # Fallback: stringify unknown objects
+    return str(obj)
+
+
+def save_config(config: ml_collections.ConfigDict, dest_path: str) -> None:
+    """
+    Save an ml_collections.ConfigDict to JSON or YAML.
+    - dest_path extension .yml/.yaml -> YAML (PyYAML required)
+    - otherwise -> JSON
+    """
+    if not isinstance(config, ml_collections.ConfigDict):
+        raise TypeError("`config` must be an ml_collections.ConfigDict")
+
+    prim = _to_primitive(config)
+
+    _, ext = os.path.splitext(dest_path)
+    ext = (ext or ".json").lower()
+
+    if ext in (".yml", ".yaml"):
+        if not _HAS_YAML:
+            raise RuntimeError("PyYAML is required to write YAML. Install with `pip install pyyaml`.")
+        with open(dest_path, "w") as f:
+            yaml.safe_dump(prim, f, sort_keys=False)
+    else:
+        # default to JSON
+        with open(dest_path, "w") as f:
+            json.dump(prim, f, indent=2, sort_keys=False)
+
+
+def _dict_to_config(raw: Any) -> Any:
+    """
+    Convert a nested dict/list/primitive structure (from JSON/YAML) into
+    ml_collections.ConfigDict (for dicts) and leave lists/primitives as-is.
+    Note: device strings remain strings (no torch.device conversion).
+    """
+    if isinstance(raw, dict):
+        cd = ml_collections.ConfigDict()
+        for k, v in raw.items():
+            cd[k] = _dict_to_config(v)
+        return cd
+
+    if isinstance(raw, list):
+        return [_dict_to_config(x) for x in raw]
+
+    # primitives (int/float/str/bool/None) -> return as is
+    return raw
+
+
+def load_config(path: str) -> ml_collections.ConfigDict:
+    """
+    Load a JSON/YAML config saved by save_config and return an ml_collections.ConfigDict.
+    Device values will be plain strings ('cuda', 'cpu', etc.) if they were saved as torch.device.
+    """
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"{path} does not exist")
+
+    _, ext = os.path.splitext(path)
+    ext = (ext or ".json").lower()
+
+    if ext in (".yml", ".yaml"):
+        if not _HAS_YAML:
+            raise RuntimeError("PyYAML is required to read YAML. Install with `pip install pyyaml`.")
+        with open(path, "r") as f:
+            raw = yaml.safe_load(f)
+    else:
+        with open(path, "r") as f:
+            raw = json.load(f)
+
+    if raw is None:
+        return ml_collections.ConfigDict()
+
+    cfg = _dict_to_config(raw)
+    # ensure we return a ConfigDict
+    if isinstance(cfg, ml_collections.ConfigDict):
+        return cfg
+    else:
+        out = ml_collections.ConfigDict()
+        out["value"] = cfg
+        return out
 
 
 def is_main_process():

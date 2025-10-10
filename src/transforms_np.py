@@ -95,7 +95,7 @@ def _param_broadcast_for_arr(param_stack: np.ndarray, arr_cf: np.ndarray) -> np.
 # find and build transforms (unchanged)
 #------------------------
 def _build_transform(filename, variables, active_dataset_name, model_src_dataset_name, transform_keys, builder):
-    logging.info(" >> >> INSIDE transforms_np _build transform: Fitting transform ...")
+    logger.info(" >> >> INSIDE transforms_np _build transform: Fitting transform ...")
     xfm = builder(variables, transform_keys)
     model_src_ds = open_zarr(model_src_dataset_name, filename)
     active_ds = open_zarr(active_dataset_name, filename)
@@ -270,7 +270,7 @@ def _find_or_create_transforms_per_variable_from_config(
             start_time = time.time()
             input_transforms[v] = load_transform(input_transform_path)
             end_time = time.time()
-            logger.info(" >> >> INSIDE transforms_np._find_or_create_transforms_per_var: |%s| load_transform %.4f seconds", v, end_time-start_time)
+            #logger.info(" >> >> INSIDE transforms_np._find_or_create_transforms_per_var: |%s| load_transform %.4f seconds", v, end_time-start_time)
         else:
             start_time = time.time()
             xfm = _build_transform_per_variable_from_config(
@@ -282,7 +282,7 @@ def _find_or_create_transforms_per_variable_from_config(
                 build_input_transform
             )[v]
             end_time = time.time()
-            logger.info(" >> >> INSIDE transforms_np._find_or_create_transforms_per_var: |%s| build_transform %.4f seconds", v, end_time-start_time)
+            #logger.info(" >> >> INSIDE transforms_np._find_or_create_transforms_per_var: |%s| build_transform %.4f seconds", v, end_time-start_time)
             
             save_transform(xfm, input_transform_path)
             input_transforms[v] = xfm
@@ -298,7 +298,7 @@ def _find_or_create_transforms_per_variable_from_config(
             start_time = time.time()
             target_transforms[v] = load_transform(target_transform_path)
             end_time = time.time()
-            logger.info(" >> >> INSIDE transforms_np._find_or_create_transforms_per_var: |%s| load_transform %.4f seconds", v, end_time-start_time)
+            #logger.info(" >> >> INSIDE transforms_np._find_or_create_transforms_per_var: |%s| load_transform %.4f seconds", v, end_time-start_time)
             
         else:
             start_time = time.time()
@@ -311,7 +311,7 @@ def _find_or_create_transforms_per_variable_from_config(
                 build_target_transform
             )[v]
             end_time = time.time()
-            logger.info(" >> >> INSIDE transforms_np._find_or_create_transforms_per_var: |%s| build_transform %.4f seconds", v, end_time-start_time)
+            #logger.info(" >> >> INSIDE transforms_np._find_or_create_transforms_per_var: |%s| build_transform %.4f seconds", v, end_time-start_time)
             
             save_transform(xfm, target_transform_path)
             target_transforms[v] = xfm

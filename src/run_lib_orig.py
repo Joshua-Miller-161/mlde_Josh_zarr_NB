@@ -37,7 +37,7 @@ print(" << <<< <<<< Logging setup complete. See", log_file, " >>>> >>> >>>")
 #====================================================================
 from src import cncsnpp
 from src.lightningModuleEMA import ScoreModelLightningModule
-from src.utils import LossOnlyProgressBar, setup_checkpoint, check_saved_checkpoint, is_main_process, create_model
+from src.utils import LossOnlyProgressBar, setup_checkpoint, check_saved_checkpoint, is_main_process, create_model, save_config
 #from src.data_scripts.collate_np.data_module import LightningDataModule
 from src.data_scripts.collate_np_per_var.data_module import LightningDataModule
 #====================================================================
@@ -45,42 +45,13 @@ def train(config, workdir, filename, val_filename):
     
     load_dotenv()
 
-    # save the config
-    config_path = os.path.join(workdir, "config.yml")
-    with open(config_path, 'w') as f:
-        f.write(config.to_yaml())
-
-    if is_main_process():
-        print(" >> INSIDE run_lib_L: got config")
-    logger.info(" >> INSIDE run_lib_L: got config")
-
-    # Create transform saving directory
-    transform_dir = os.path.join(workdir, "transforms")
-    os.makedirs(transform_dir, exist_ok=True)
-    if is_main_process():
-        print(" >> INSIDE run_lib_L: got transform_dir")
-    logger.info(" >> INSIDE run_lib_L: got transform_dir")
-
-    # Create directories for experimental logs
-    sample_dir = os.path.join(workdir, "samples")
-    os.makedirs(sample_dir, exist_ok=True)
-    if is_main_process():
-        print(" >> INSIDE run_lib_L: got transform_dir")
-    logger.info(" >> INSIDE run_lib_L: got transform_dir")
-
-    tb_dir = os.path.join(workdir, "tensorboard")
-    os.makedirs(tb_dir, exist_ok=True)
-    if is_main_process():
-        print(" >> INSIDE run_lib_L: got tb_dir")
-    logger.info(" >> INSIDE run_lib_L: got tb_dir")
-
-    target_xfm_keys = defaultdict(lambda: config.data.target_transform_key) | dict(config.data.target_transform_overrides)
-
     if is_main_process():
         print(" >> INSIDE run_lib_L: got run_config")
-        print(" >> INSIDE run_lib_L folder:", os.path.join(os.getenv('DERIVED_DATA'), config.data.dataset_name))
+        print(" >> INSIDE run_lib_L folder:", str(os.path.join(os.getenv('DERIVED_DATA'), config.data.dataset_name, config.experiment_name)))
     logger.info(" >> INSIDE run_lib_L: got run_config")
-    logger.info(" >> INSIDE run_lib_L folder: %s", os.path.join(os.getenv('DERIVED_DATA'), config.data.dataset_name))
+    logger.info(" >> INSIDE run_lib_L folder: %s", str(os.path.join(os.getenv('DERIVED_DATA'), config.data.dataset_name, config.experiment_name)))
+
+    target_xfm_keys = defaultdict(lambda: config.data.target_transform_key) | dict(config.data.target_transform_overrides)
 
     if not 'per_var' in LightningDataModule.__module__:
         data_module = LightningDataModule(
@@ -125,10 +96,12 @@ def train(config, workdir, filename, val_filename):
 
     checkpoint_cb, checkpoint_path = setup_checkpoint(config, workdir)
 
+    save_config(config, os.path.join(checkpoint_path, "config.yml"))
+
     resume_chekpoint_path = check_saved_checkpoint(checkpoint_path)
 
     trainer = Trainer(
-        default_root_dir = os.path.join("lightning_logs", config.data.dataset_name),
+        default_root_dir=os.path.join("lightning_logs", config.data.dataset_name),
         max_epochs=config.training.n_epochs,
         accelerator="gpu",
         devices=torch.cuda.device_count(),
