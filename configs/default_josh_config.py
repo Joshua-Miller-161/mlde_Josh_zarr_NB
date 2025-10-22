@@ -87,8 +87,8 @@ def get_default_configs():
     optim.weight_decay = 0
     optim.optimizer = 'Adam' # Options: 'Adam', 'SGD', uhhh
     optim.scheduler = 'fixed' # Options: 'fixed', 'decay', 'triangle'
-    optim.lr = 2e-4
-    optim.final_lr = 2e-4
+    optim.lr = 5e-4
+    optim.final_lr = 5e-5
     optim.beta1 = 0.9
     optim.eps = 1e-8
     optim.warmup = 5000
