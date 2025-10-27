@@ -19,11 +19,16 @@ class ScoreModelLightningModule(pl.LightningModule):
     def __init__(self, config):
         super().__init__()
         self.config = config
+        
+        logger.info(" >> >> INSIDE lightningModule config.deterministic %s, sde: %s", config.deterministic, config.training.sde)
+
         self.model  = create_model(config)
         self.sde    = get_sde(config)
         self.ema    = ExponentialMovingAverage(self.model.parameters(),
                                                decay=config.model.ema_rate)
+        
         print(" >> >> INSIDE lightningModule", type(self.sde))
+        
         self.train_loss_fn = get_loss(self.sde, True, config)
         self.val_loss_fn   = get_loss(self.sde, False, config)
         self.batch_size = config.training.batch_size

@@ -13,27 +13,10 @@ import torch
 from torchinfo import summary
 torch.set_float32_matmul_precision('medium')
 import torchvision
+
+logger = logging.getLogger(__name__)
 #===================================================================
 FLAGS = flags.FLAGS
-#===================================================================
-log_dir = os.path.join(os.getcwd(), "Outputs")
-os.makedirs(log_dir, exist_ok=True)
-log_file = os.path.join(log_dir, "log.log")
-open(log_file, 'w').close()
-
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(message)s",
-    handlers=[
-        logging.FileHandler(log_file, mode='w'),  # Overwrite mode
-        logging.StreamHandler(),  # Also logs to stdout
-    ],
-)
-# Create logger
-logger = logging.getLogger(__name__)
-logger.info(" << <<< <<<< Logging setup complete. See %s >>>> >>> >>>", log_file)
-print(" << <<< <<<< Logging setup complete. See", log_file, " >>>> >>> >>>")
 #====================================================================
 from src import cncsnpp
 from src.lightningModuleEMA import ScoreModelLightningModule
@@ -45,11 +28,18 @@ def train(config, workdir, filename, val_filename):
     
     load_dotenv()
 
+    if ((config.deterministic == 'True') or (config.deterministic == 'true') or (config.deterministic == True) or (config.deterministic == 1)):
+        config.deterministic = True
+    else:
+        config.deterministic = False
+    
     if is_main_process():
-        print(" >> INSIDE run_lib_L: got run_config")
-        print(" >> INSIDE run_lib_L folder:", str(os.path.join(os.getenv('DERIVED_DATA'), config.data.dataset_name, config.experiment_name)))
-    logger.info(" >> INSIDE run_lib_L: got run_config")
-    logger.info(" >> INSIDE run_lib_L folder: %s", str(os.path.join(os.getenv('DERIVED_DATA'), config.data.dataset_name, config.experiment_name)))
+        print(" >> INSIDE train_model.py: got run_config")
+        print(" >> INSIDE train_model.py folder:", str(os.path.join(os.getenv('DERIVED_DATA'), config.data.dataset_name, config.experiment_name)))
+    logger.info(" >> INSIDE train_model.py: got run_config")
+    logger.info(" >> INSIDE train_model.py folder: %s", str(os.path.join(os.getenv('DERIVED_DATA'), config.data.dataset_name, config.experiment_name)))
+
+    logger.info(" >> INSIDE train_model.py config.deterministic %s, sde: %s", config.deterministic, config.training.sde)
 
     target_xfm_keys = defaultdict(lambda: config.data.target_transform_key) | dict(config.data.target_transform_overrides)
 

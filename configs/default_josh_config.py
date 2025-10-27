@@ -6,6 +6,8 @@ def get_default_configs():
 
     config = ml_collections.ConfigDict()
     config.experiment_name = 'Elev'
+    config.deterministic = False # False means uses diffusion, True means uses deterministic mse loss
+    
     # training
     config.training = training = ml_collections.ConfigDict()
     config.training.batch_size = 12 #128
@@ -98,6 +100,5 @@ def get_default_configs():
 
     config.seed = 42
     config.device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
-    config.deterministic = False
 
     return config

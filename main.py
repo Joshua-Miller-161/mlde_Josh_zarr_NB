@@ -21,11 +21,30 @@ import os
 from absl import app
 from absl import flags
 from ml_collections.config_flags import config_flags
-#import logging
+import logging
 import os
 
 sys.path.append(os.getcwd())
-from src import run_lib_orig as run_lib
+from src import train_model
+#====================================================================
+log_dir = os.path.join(os.getcwd(), "Outputs")
+os.makedirs(log_dir, exist_ok=True)
+log_file = os.path.join(log_dir, "log.log")
+open(log_file, 'w').close()
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+    handlers=[
+        logging.FileHandler(log_file, mode='w'),  # Overwrite mode
+        logging.StreamHandler(),  # Also logs to stdout
+    ],
+)
+# Create logger
+logger = logging.getLogger(__name__)
+logger.info(" << <<< <<<< Logging setup complete. See %s >>>> >>> >>>", log_file)
+print(" << <<< <<<< Logging setup complete. See", log_file, " >>>> >>> >>>")
 #====================================================================
 FLAGS = flags.FLAGS
 
@@ -44,8 +63,8 @@ def main(argv):
         # Create the working directory
         os.makedirs(FLAGS.workdir, exist_ok=True)
 
-        # Run the training pipeline
-        run_lib.train(FLAGS.config, FLAGS.workdir, FLAGS.filename, FLAGS.val_filename)
+        train_model.train(FLAGS.config, FLAGS.workdir, FLAGS.filename, FLAGS.val_filename)
+    
     else:
         raise ValueError(f"Mode {FLAGS.mode} not recognized.")
 
