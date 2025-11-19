@@ -7,9 +7,9 @@ import functools
 import logging
 logger = logging.getLogger(__name__)
 
-from ..layers import get_act, get_timestep_embedding, default_init, ddpm_conv3x3, Upsample, Downsample
-from ..layerspp import GaussianFourierProjection, AttnBlockpp, ResnetBlockBigGANpp, ResnetBlockDDPMpp, Combine
-from ..utils import get_sigmas, register_model
+from ..layers import get_act, ddpm_conv3x3, Upsample, Downsample
+from ..layerspp import AttnBlockpp, ResnetBlockBigGANpp, ResnetBlockDDPMpp, Combine
+from ..utils import register_model
 #from .data_scripts.data_utils import get_variables
 from ..data_scripts.collate_np_per_var import get_variables
 
@@ -25,8 +25,6 @@ class cNCSNpp(nn.Module):
         
         self.config = config
         self.act = act = get_act(config)
-        self.register_buffer('sigmas', torch.tensor(get_sigmas(config)))
-
         self.nf = nf = config.model.nf
         ch_mult = list(config.model.ch_mult)
         self.num_res_blocks = num_res_blocks = config.model.num_res_blocks
@@ -36,15 +34,14 @@ class cNCSNpp(nn.Module):
         self.num_resolutions = num_resolutions = len(ch_mult)
         self.all_resolutions = all_resolutions = [config.data.image_size // (2 ** i) for i in range(num_resolutions)]
 
-        self.conditional = conditional = config.model.conditional  # noise-conditional
         fir = config.model.fir
         fir_kernel = getattr(config.model, "fir_kernel", [1, 3, 3, 1])
         self.skip_rescale = skip_rescale = config.model.skip_rescale
         self.resblock_type = resblock_type = config.model.resblock_type.lower()
         self.progressive = progressive = config.model.progressive.lower()
         self.progressive_input = progressive_input = config.model.progressive_input.lower()
-        self.embedding_type = embedding_type = config.model.embedding_type.lower()
         init_scale = config.model.init_scale
+        embedding_type = config.model.embedding_type.lower()
         assert progressive in ["none", "output_skip", "residual"]
         assert progressive_input in ["none", "input_skip", "residual"]
         assert embedding_type in ["fourier", "positional"]
@@ -52,23 +49,10 @@ class cNCSNpp(nn.Module):
         combiner = functools.partial(Combine, method=combine_method)
 
         modules = []
-        #Timestep / noise-level embedding
-        if embedding_type == "fourier":
-            assert config.training.continuous, "Fourier features are only used for continuous training."
-            modules.append(GaussianFourierProjection(embedding_size=nf, scale=config.model.fourier_scale))
-            embed_dim = 2 * nf
-        elif embedding_type == "positional":
-            embed_dim = nf
-        else:
-            raise ValueError(f"Unknown embedding type: {embedding_type}")
 
-        if conditional:
-            modules.append(nn.Linear(embed_dim, nf * 4))
-            modules[-1].weight.data = default_init()(modules[-1].weight.shape)
-            nn.init.zeros_(modules[-1].bias)
-            modules.append(nn.Linear(nf * 4, nf * 4))
-            modules[-1].weight.data = default_init()(modules[-1].weight.shape)
-            nn.init.zeros_(modules[-1].bias)
+        # In deterministic mode we do not supply time/noise embeddings. Keep the
+        # architecture identical otherwise by simply disabling the temb path.
+        embed_dim = None
 
         AttnBlock = functools.partial(AttnBlockpp, init_scale=init_scale, skip_rescale=skip_rescale)
 
@@ -93,7 +77,7 @@ class cNCSNpp(nn.Module):
                 dropout=dropout,
                 init_scale=init_scale,
                 skip_rescale=skip_rescale,
-                temb_dim=nf * 4,
+                temb_dim=embed_dim,
             )
         elif resblock_type == "biggan":
             ResnetBlock = functools.partial(
@@ -104,7 +88,7 @@ class cNCSNpp(nn.Module):
                 fir_kernel=fir_kernel,
                 init_scale=init_scale,
                 skip_rescale=skip_rescale,
-                temb_dim=nf * 4,
+                temb_dim=embed_dim,
             )
         else:
             raise ValueError(f"resblock type {resblock_type} unrecognized.")
@@ -211,34 +195,18 @@ class cNCSNpp(nn.Module):
         modules.append(ddpm_conv3x3(channels, output_channels, init_scale=init_scale))
 
         self.all_modules = nn.ModuleList(modules)
-        self.embedding_type = embedding_type
 
     def forward(self, x, cond, time_cond):
         # Combine modeled data and conditioning inputs
         #x = torch.cat([x, cond], dim=1)
 
-        logger.info(f" >> >> INSIDE DET CNCSNPP forward x={x.shape} {type(x)}, cond={cond.shape} {type(cond)}, time_cond={time_cond.shape} {time_cond}")
+        logger.info(f" >> >> INSIDE DET CNCSNPP forward x={x.shape} {type(x)}, cond={cond.shape} {type(cond)}")
         x = cond
         modules = self.all_modules
         m_idx = 0
 
-        if self.embedding_type == "fourier":
-            used_sigmas = time_cond  # expected to be continuous sigma (or log) per original
-            temb = modules[m_idx](torch.log(used_sigmas))
-            m_idx += 1
-        elif self.embedding_type == "positional":
-            timesteps = time_cond
-            used_sigmas = self.sigmas[time_cond.long()]
-            temb = get_timestep_embedding(timesteps, self.nf)
-        else:
-            raise ValueError(f"Unknown embedding type {self.embedding_type}.")
-
-        # Project embedding if conditional
-        if self.config.model.conditional:
-            temb = modules[m_idx](temb); m_idx += 1
-            temb = modules[m_idx](self.act(temb)); m_idx += 1
-        else:
-            temb = None
+        # Deterministic model ignores diffusion timesteps/noise levels.
+        temb = None
 
         # Progressive input pyramid
         input_pyramid = x if self.config.model.progressive_input != "none" else None
@@ -328,7 +296,4 @@ class cNCSNpp(nn.Module):
         h = modules[m_idx](h); m_idx += 1
         assert m_idx == len(modules)
 
-        if getattr(self.config.model, "scale_by_sigma", False):
-            used_sigmas = used_sigmas.reshape((x.shape[0], *([1] * (x.ndim - 1))))
-            h = h / used_sigmas
         return h
