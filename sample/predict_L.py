@@ -356,4 +356,11 @@ def main(
         print(f" <> INSIDE predict_L.py xr_samples.to_netcdf {end_time-start_time:.3f} seconds")
 
 if __name__ == "__main__":
-    app()
+    import click, typer as _typer
+    # Run the underlying Click command without Typer’s Rich panels
+    _cli = _typer.main.get_command(app)
+    try:
+        _cli(standalone_mode=False)
+    except click.ClickException as e:
+        click.echo(f"Error: {e.format_message()}", err=True)
+        raise SystemExit(e.exit_code)

@@ -30,23 +30,9 @@ logger = logging.getLogger(__name__)
 from .utils import get_score_fn, get_model_fn
 from .sde_lib import VESDE, VPSDE
 #====================================================================
-# def optimization_manager(config):
-#   """Returns an optimize_fn based on `config`."""
-
-#   def optimize_fn(optimizer, params, step, lr=config.optim.lr,
-#                   warmup=config.optim.warmup,
-#                   grad_clip=config.optim.grad_clip):
-#     """Optimizes with warmup and gradient clipping (disabled if negative)."""
-#     if warmup > 0:
-#       for g in optimizer.param_groups:
-#         g['lr'] = lr * np.minimum(step / warmup, 1.0)
-#     if grad_clip >= 0:
-#       torch.nn.utils.clip_grad_norm_(params, max_norm=grad_clip)
-#     optimizer.step()
-
-#   return optimize_fn
-#====================================================================
 def get_deterministic_loss_fn(train, reduce_mean=True):
+    logger.info(" >> >> INSIDE get_deterministic_loss_fn")
+    
     def loss_fn(model, batch, cond, generator=None):
         """Compute the loss function for a deterministic run.
 
@@ -67,7 +53,7 @@ def get_deterministic_loss_fn(train, reduce_mean=True):
         return loss
 
     return loss_fn
-
+#====================================================================
 def get_sde_loss_fn(sde, train, reduce_mean=True, continuous=True, likelihood_weighting=True, eps=1e-5):
     """Create a loss function for training with arbirary SDEs.
 
@@ -88,7 +74,6 @@ def get_sde_loss_fn(sde, train, reduce_mean=True, continuous=True, likelihood_we
 
     def loss_fn(model, batch, cond, generator=None):
         """Compute the loss function.
-
         Args:
         model: A score model.
         batch: A mini-batch of training/evaluation data to model.
@@ -167,6 +152,30 @@ def get_ddpm_loss_fn(vpsde, train, reduce_mean=True):
 
     return loss_fn
 #====================================================================
+def get_loss(sde, train, config):
+    print(" >> >> INSIDE losses.get_loss sde", type(sde), ", config.deterministic", config.deterministic, type(config.deterministic))
+    logger.info(" >> >> INSIDE losses.get_loss sde %s, config.deterministic %s %s", type(sde), config.deterministic, type(config.deterministic))
+    
+    if (config.deterministic or (config.deterministic == 'True')):
+        loss_fn = get_deterministic_loss_fn(train,
+                                            reduce_mean=config.training.reduce_mean)
+    else:
+        if config.training.continuous:
+            loss_fn = get_sde_loss_fn(sde, 
+                                      train,
+                                      reduce_mean=config.training.reduce_mean,
+                                      continuous=True,
+                                      likelihood_weighting=config.training.likelihood_weighting)
+        else:
+            assert not config.training.likelihood_weighting, "Likelihood weighting is not supported for original SMLD/DDPM training."
+            if isinstance(sde, VESDE):
+                loss_fn = get_smld_loss_fn(sde, train, reduce_mean=config.training.reduce_mean)
+            elif isinstance(sde, VPSDE):
+                loss_fn = get_ddpm_loss_fn(sde, train, reduce_mean=config.training.reduce_mean)
+            else:
+                raise ValueError(f"Discrete training for {sde.__class__.__name__} is not recommended.")
+    return loss_fn
+#====================================================================
 # def get_step_fn(sde, train, optimize_fn=None, reduce_mean=False, continuous=True, likelihood_weighting=False, deterministic=False):
 #   """Create a one-step training/evaluation function.
 
@@ -234,26 +243,18 @@ def get_ddpm_loss_fn(vpsde, train, reduce_mean=True):
 
 #   return step_fn
 #====================================================================
-def get_loss(sde, train, config):
-    print(" >> >> INSIDE losses.get_loss sde", type(sde), ", config.deterministic", config.deterministic, type(config.deterministic))
-    logger.info(" >> >> INSIDE losses.get_loss sde %s, config.deterministic %s %s", type(sde), config.deterministic, type(config.deterministic))
-    
-    if (config.deterministic or (config.deterministic == 'True')):
-        loss_fn = get_deterministic_loss_fn(train,
-                                            reduce_mean=config.training.reduce_mean)
-    else:
-        if config.training.continuous:
-            loss_fn = get_sde_loss_fn(sde, 
-                                      train,
-                                      reduce_mean=config.training.reduce_mean,
-                                      continuous=True,
-                                      likelihood_weighting=config.training.likelihood_weighting)
-        else:
-            assert not config.training.likelihood_weighting, "Likelihood weighting is not supported for original SMLD/DDPM training."
-            if isinstance(sde, VESDE):
-                loss_fn = get_smld_loss_fn(sde, train, reduce_mean=config.training.reduce_mean)
-            elif isinstance(sde, VPSDE):
-                loss_fn = get_ddpm_loss_fn(sde, train, reduce_mean=config.training.reduce_mean)
-            else:
-                raise ValueError(f"Discrete training for {sde.__class__.__name__} is not recommended.")
-    return loss_fn
+# def optimization_manager(config):
+#   """Returns an optimize_fn based on `config`."""
+
+#   def optimize_fn(optimizer, params, step, lr=config.optim.lr,
+#                   warmup=config.optim.warmup,
+#                   grad_clip=config.optim.grad_clip):
+#     """Optimizes with warmup and gradient clipping (disabled if negative)."""
+#     if warmup > 0:
+#       for g in optimizer.param_groups:
+#         g['lr'] = lr * np.minimum(step / warmup, 1.0)
+#     if grad_clip >= 0:
+#       torch.nn.utils.clip_grad_norm_(params, max_norm=grad_clip)
+#     optimizer.step()
+
+#   return optimize_fn

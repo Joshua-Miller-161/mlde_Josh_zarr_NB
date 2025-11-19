@@ -238,8 +238,10 @@ class cNCSNpp(nn.Module):
 
     def forward(self, x, cond, time_cond):
         # Combine modeled data and conditioning inputs
+        #logger.info(f" >> >> INSIDE CNCSNPP forward x={x.shape} {type(x)}, cond={cond.shape} {type(cond)}, time_cond={time_cond.shape} {time_cond}")
         x = torch.cat([x, cond], dim=1)
-
+        #logger.info(f" >> >> INSIDE CNCSNPP forward x={x.shape}")
+        
         modules = self.all_modules
         m_idx = 0
 

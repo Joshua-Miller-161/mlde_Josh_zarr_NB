@@ -26,6 +26,9 @@ import torch
 import numpy as np
 import abc
 from scipy import integrate
+import logging
+
+logger = logging.getLogger(__name__)
 
 from src.utils import from_flattened_numpy, to_flattened_numpy, get_score_fn
 from src import sde_lib
@@ -487,6 +490,8 @@ def get_deterministic_sampler(shape, device='cuda'):
     Returns:
       samples, number of function evaluations.
     """
+    print(" >> >> INSIDE get_deterministic_sampler")
+    logger.info(" >> >> INSIDE get_deterministic_sampler")
     def deterministic_sampler(model, cond):
         with torch.no_grad():
             # Initial sample
@@ -496,9 +501,9 @@ def get_deterministic_sampler(shape, device='cuda'):
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             x = torch.zeros(output_shape, device=device)
             t = torch.zeros(output_shape[0], device=device)
-            # cond = cond.to(device)
+            cond = cond.to(device)
 
-            samples = model(x, cond, t)
+            samples = model.forward(x, cond, t)
 
         return samples, 1
 

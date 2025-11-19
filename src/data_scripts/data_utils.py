@@ -57,7 +57,11 @@ def open_zarr(dataset_name, filename):
     if is_main_process():
         print(" >> >> INSIDE mlde_josh_utils.data.data_utils.py open_zarr,", datafile_path(dataset_name, filename))
     logger.info(" >> >> INSIDE mlde_josh_utils.data.data_utils.py open_zarr [Rank %d], %s", rank, str(datafile_path(dataset_name, filename)))
-    return xr.open_zarr(datafile_path(dataset_name, filename), consolidated=True)
+    
+    try:
+        return xr.open_zarr(datafile_path(dataset_name, filename), consolidated=True)
+    except KeyError:
+        return xr.open_zarr(datafile_path(dataset_name, filename))
 #====================================================================
 def build_DataLoader(xr_data, model_src_dataset_name, batch_size, shuffle, include_time_inputs):
     # sampler = DistributedSampler(dataset) if self.trainer and self.trainer.world_size > 1 else None
@@ -268,7 +272,10 @@ def custom_collate(batch):
         )
 #====================================================================
 def _get_zarr_length(zarr_path):
-    ds = xr.open_zarr(zarr_path, consolidated=True)
+    try:
+        ds = xr.open_zarr(zarr_path, consolidated=True)
+    except KeyError:
+        ds = xr.open_zarr(zarr_path)
     n = len(ds.time)
     try:
         ds.close()

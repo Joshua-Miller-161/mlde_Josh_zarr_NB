@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 FLAGS = flags.FLAGS
 #====================================================================
 from src import cncsnpp
+from src.deterministic_models import cncsnpp
 from src.lightningModuleEMA import ScoreModelLightningModule
 from src.utils import LossOnlyProgressBar, setup_checkpoint, check_saved_checkpoint, is_main_process, create_model, save_config
 #from src.data_scripts.collate_np.data_module import LightningDataModule
@@ -30,6 +31,8 @@ def train(config, workdir, filename, val_filename):
 
     if ((config.deterministic == 'True') or (config.deterministic == 'true') or (config.deterministic == True) or (config.deterministic == 1)):
         config.deterministic = True
+        config.model.name = config.model.name
+        #config.model.name = 'det_'+config.model.name
     else:
         config.deterministic = False
     
@@ -43,39 +46,39 @@ def train(config, workdir, filename, val_filename):
 
     target_xfm_keys = defaultdict(lambda: config.data.target_transform_key) | dict(config.data.target_transform_overrides)
 
-    if not 'per_var' in LightningDataModule.__module__:
-        data_module = LightningDataModule(
-            active_dataset_name=config.data.dataset_name,
-            model_src_dataset_name=config.data.dataset_name,
-            input_transform_dataset_name=config.data.dataset_name,
-            input_transform_key=config.data.input_transform_key,
-            target_transform_key=config.data.target_transform_key,
-            transform_dir=os.path.join(workdir, 'transforms'),
-            batch_size=config.training.batch_size,
-            filename=filename,
-            val_filename=val_filename,
-            include_time_inputs=False,
-            evaluation=False,
-            shuffle=True,
-            num_workers=3,
-            prefetch_factor=3
-        )
-    else:
-        data_module = LightningDataModule(
-            config=config,
-            active_dataset_name=config.data.dataset_name,
-            model_src_dataset_name=config.data.dataset_name,
-            input_transform_dataset_name=config.data.dataset_name,
-            transform_dir=os.path.join(workdir, 'transforms'),
-            batch_size=config.training.batch_size,
-            filename=filename,
-            val_filename=val_filename,
-            include_time_inputs=False,
-            evaluation=False,
-            shuffle=True,
-            num_workers=3,
-            prefetch_factor=3
-        )
+    # if not 'per_var' in LightningDataModule.__module__:
+    #     data_module = LightningDataModule(
+    #         active_dataset_name=config.data.dataset_name,
+    #         model_src_dataset_name=config.data.dataset_name,
+    #         input_transform_dataset_name=config.data.dataset_name,
+    #         input_transform_key=config.data.input_transform_key,
+    #         target_transform_key=config.data.target_transform_key,
+    #         transform_dir=os.path.join(workdir, 'transforms'),
+    #         batch_size=config.training.batch_size,
+    #         filename=filename,
+    #         val_filename=val_filename,
+    #         include_time_inputs=False,
+    #         evaluation=False,
+    #         shuffle=True,
+    #         num_workers=3,
+    #         prefetch_factor=3
+    #     )
+    # else:
+    data_module = LightningDataModule(
+        config=config,
+        active_dataset_name=config.data.dataset_name,
+        model_src_dataset_name=config.data.dataset_name,
+        input_transform_dataset_name=config.data.dataset_name,
+        transform_dir=os.path.join(workdir, 'transforms'),
+        batch_size=config.training.batch_size,
+        filename=filename,
+        val_filename=val_filename,
+        include_time_inputs=False,
+        evaluation=False,
+        shuffle=True,
+        num_workers=3,
+        prefetch_factor=3
+    )
 
     if config.training.random_crop_size > 0:
         random_crop = torchvision.transforms.RandomCrop(config.training.random_crop_size)
