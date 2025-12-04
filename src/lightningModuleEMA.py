@@ -9,7 +9,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 from .ema import ExponentialMovingAverage
-from .utils import create_model
+from .utils import create_model, is_main_process
 from .losses import get_loss
 from .sde_lib import get_sde
 from .optimizers import get_optimizer
@@ -83,6 +83,12 @@ class ScoreModelLightningModule(pl.LightningModule):
         logger.info(" >> INSIDE lightningModuleEMA on_train_epoch_end [rank %d] EPOCH END: processed %d batches this epoch", rank, getattr(self, "_batch_counter", -1))
         
     def validation_step(self, batch, batch_idx):
+        #if is_main_process():
+            #logger.info("))))))))))))))))))))))))) VALIDATION STEP ((((((((((((((((((((((((((((") 
+            #logger.info("))))))))))))))))))))))))) VALIDATION STEP ((((((((((((((((((((((((((((") 
+            #logger.info("))))))))))))))))))))))))) VALIDATION STEP ((((((((((((((((((((((((((((") 
+            #logger.info("))))))))))))))))))))))))) VALIDATION STEP ((((((((((((((((((((((((((((") 
+        
         cond, target, time = batch
         val_loss = self.val_loss_fn(self.model, target, cond)
         self.val_losses.append(val_loss.detach())
@@ -97,7 +103,6 @@ class ScoreModelLightningModule(pl.LightningModule):
             avg_val_loss = torch.stack(self.val_losses).mean()
             if self.trainer.global_rank == 0:
                 self.log("val_loss", avg_val_loss, prog_bar=True, sync_dist=True, logger=True, on_epoch=True, on_step=False, rank_zero_only=True)
-                print(f" >> >> Epoch {self.current_epoch} - lr: {avg_val_loss}")
 
         # Restore original weights
         self.ema.restore(self.model.parameters())

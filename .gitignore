@@ -1,5 +1,6 @@
 Outputs/
 lightning_logs/
 .ipynb_checkpoints/
-.env
-.sh
+*.env
+*.sh
+*ipynb

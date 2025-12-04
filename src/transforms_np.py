@@ -902,8 +902,8 @@ class ComposeT:
 def build_input_transform(variables, key="v1"):
     if key == "v1":
         return ComposeT([Standardize(variables), UnitRangeT(variables)])
-    if key == "none":
-        return NoopT()
+    if key in ["none", "noop"]:
+        return NoopT([variables])
     if key in ["standardize", "stan"]:
         return ComposeT([Standardize(variables)])
     if key == "stanur":
@@ -922,8 +922,8 @@ def build_input_transform(variables, key="v1"):
 def build_target_transform(target_variable, key):
     if key == "v1":
         return ComposeT([SqrtT([target_variable]), ClipT([target_variable]), UnitRangeT([target_variable])])
-    if key == "none":
-        return NoopT()
+    if key in ["none", "noop"]:
+        return NoopT([target_variable])
     if key == "sqrt":
         return ComposeT([RootT([target_variable], 2), ClipT([target_variable])])
     if key == "sqrtur":

@@ -24,10 +24,11 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 import logging
+from pytorch_msssim import ms_ssim
 
 logger = logging.getLogger(__name__)
 
-from .utils import get_score_fn, get_model_fn
+from .utils import get_score_fn, get_model_fn, is_main_process
 from .sde_lib import VESDE, VPSDE
 #====================================================================
 def get_deterministic_loss_fn(train, reduce_mean=True):
@@ -50,6 +51,147 @@ def get_deterministic_loss_fn(train, reduce_mean=True):
         t = torch.zeros(batch.shape[0], device=batch.device)
         pred = model(x, cond, t)
         loss = F.mse_loss(pred, batch, reduction="mean")
+
+        #if is_main_process():
+        #    logger.info(f" >> >> INSIDE get_deterministic_loss_fn pred {pred}")
+        #    logger.info(f" >> >> INSIDE get_deterministic_loss_fn batch {batch}")
+        #    logger.info(f" >> >> INSIDE get_deterministic_loss_fn loss {loss}")
+        #    logger.info("_____________________________________________________")
+        return loss
+
+    return loss_fn
+#====================================================================
+def get_deterministic_loss_fn_wmse_msssim(
+    train,
+    reduce_mean: bool = True,
+    alpha: float = 0.007,
+    beta: float = 0.048,
+    lam: float = 0.158,
+    precip_max: float = 100.0,
+):
+    """Deterministic loss: WMSE + MS-SSIM (Hess & Boers 2022 style).
+
+    The model is trained on *untransformed* precipitation:
+        - batch and pred are in physical units (e.g. mm/hr),
+          so config.data.target_transform_key should be 'none'.
+
+    Args:
+        train: Unused, kept for API compatibility.
+        reduce_mean: If True, average WMSE over all elements. If False, WMSE
+            is averaged per-sample (spatial dims) and then averaged over batch.
+        alpha, beta: Weight parameters in
+            w(y) = min(alpha * exp(beta * y), 1).
+        lam: Convex weight between WMSE and MS-SSIM, i.e.
+             L = lam * WMSE + (1 - lam) * (1 - MS_SSIM).
+        precip_max: Maximum precipitation (physical units) used as data_range
+            for MS-SSIM.
+
+    Returns:
+        A loss_fn(model, batch, cond, generator=None) callable.
+    """
+    if ms_ssim is None:
+        raise RuntimeError(
+            "pytorch_msssim.ms_ssim is required for WMSE-MS-SSIM loss "
+            "(pip install pytorch-msssim)."
+        )
+
+    if is_main_process():
+        logger.info(
+            f" >> >> WMSE-MS-SSIM loss initialised (lam={lam}, alpha={alpha}, beta={beta})"
+        )
+
+    # keep call count inside closure so we can log every 50 steps
+    call_state = {"n": 0}
+
+    def loss_fn(model, batch, cond, generator=None):
+        """Compute WMSE-MS-SSIM loss for deterministic model.
+
+        Args:
+            model: The deterministic model f(x=0, cond, t=0).
+            batch: Target precipitation in physical units (e.g. mm/hr).
+            cond: Conditioning inputs.
+            generator: Unused (for API compatibility).
+
+        Returns:
+            Scalar loss (WMSE-MS-SSIM) averaged over the mini-batch.
+        """
+        call_state["n"] += 1
+
+        # For deterministic model, ignore x and t: always zeros.
+        x = torch.zeros_like(batch)
+        t = torch.zeros(batch.shape[0], device=batch.device)
+        pred = model(x, cond, t)  # same physical space as batch
+
+        # ------------------------------------------------------------------
+        # 1) batch and pred are already in physical units (mm/hr)
+        # ------------------------------------------------------------------
+        target_phys = batch
+        pred_phys = pred
+
+        # ------------------------------------------------------------------
+        # 2) Weighted MSE term (WMSE)
+        #      w(y) = min(alpha * exp(beta * y), 1)
+        #      WMSE = mean( w(y_true) * (y_pred - y_true)^2 )
+        # ------------------------------------------------------------------
+        weights = torch.clamp(alpha * torch.exp(beta * target_phys), max=1.0)
+        sq_err = (pred_phys - target_phys) ** 2
+        weighted_sq_err = weights * sq_err
+
+        if reduce_mean:
+            wmse = torch.mean(weighted_sq_err)
+        else:
+            # Average over non-batch dims, then over batch.
+            # Supports [B, H, W] or [B, C, H, W].
+            if weighted_sq_err.ndim == 4:
+                spatial_dims = (1, 2, 3)
+            elif weighted_sq_err.ndim == 3:
+                spatial_dims = (1, 2)
+            else:
+                spatial_dims = tuple(range(1, weighted_sq_err.ndim))
+            wmse_per_sample = weighted_sq_err.mean(dim=spatial_dims)
+            wmse = wmse_per_sample.mean()
+
+        # ------------------------------------------------------------------
+        # 3) MS-SSIM term
+        # ------------------------------------------------------------------
+        if target_phys.ndim == 3:
+            # [B, H, W] -> [B, 1, H, W]
+            target_img = target_phys.unsqueeze(1)
+            pred_img = pred_phys.unsqueeze(1)
+        elif target_phys.ndim == 4:
+            # Assume already [B, C, H, W]
+            target_img = target_phys
+            pred_img = pred_phys
+        else:
+            raise ValueError(
+                f"Unexpected target tensor shape {target_phys.shape}; "
+                "expected [B, H, W] or [B, C, H, W]."
+            )
+
+        ms_ssim_val = ms_ssim(
+            pred_img,
+            target_img,
+            data_range=precip_max,
+            size_average=True,
+        )
+        ms_ssim_loss = 1.0 - ms_ssim_val
+
+        # ------------------------------------------------------------------
+        # 4) Combine terms: WMSE + MS-SSIM (Hess & Boers hyperparameters)
+        # ------------------------------------------------------------------
+        loss = lam * wmse + (1.0 - lam) * ms_ssim_loss
+
+        # ------------------------------------------------------------------
+        # 5) Log components every 50 steps on main process
+        # ------------------------------------------------------------------
+        if is_main_process() and (call_state["n"] % 50 == 0):
+            logger.info(
+                " >> >> INSIDE wmse_msssim loss | step %d: wmse=%.6e, ms_ssim_loss=%.6e, total=%.6e",
+                call_state["n"],
+                wmse.item(),
+                ms_ssim_loss.item(),
+                loss.item(),
+            )
         return loss
 
     return loss_fn
@@ -157,8 +299,21 @@ def get_loss(sde, train, config):
     logger.info(" >> >> INSIDE losses.get_loss sde %s, config.deterministic %s %s", type(sde), config.deterministic, type(config.deterministic))
     
     if (config.deterministic or (config.deterministic == 'True')):
-        loss_fn = get_deterministic_loss_fn(train,
-                                            reduce_mean=config.training.reduce_mean)
+        if (config.training.det_loss_type == 'WMSE_MS-SSIM'):
+
+            logger.info("[[[[[[[[[[[[[[[[[[[[[[[ WMSE MS-SSIM ]]]]]]]]]]]]]]]]]]]]]]]")
+
+
+            assert config.data.predictands.target_transform_keys[0] == "none", f"config.data.target_transform_key must be 'none', Got {config.data.predictands.target_transform_keys}"
+            loss_fn = get_deterministic_loss_fn_wmse_msssim(train,
+                                                            reduce_mean=config.training.reduce_mean,
+                                                            alpha=config.training.wmse_ms_ssim_alpha,
+                                                            beta=config.training.wmse_ms_ssim_beta,
+                                                            lam=config.training.wmse_ms_ssim_lam) 
+        else:
+            logger.info("[[[[[[[[[[[[[[[[[[[[[[[ regular MSE ]]]]]]]]]]]]]]]]]]]]]]]")
+            loss_fn = get_deterministic_loss_fn(train, reduce_mean=config.training.reduce_mean)
+        
     else:
         if config.training.continuous:
             loss_fn = get_sde_loss_fn(sde, 

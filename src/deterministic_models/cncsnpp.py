@@ -104,7 +104,7 @@ class cNCSNpp(nn.Module):
         else:
             cond_time_channels = 0
 
-        channels = cond_var_channels + cond_time_channels + output_channels + config.model.loc_spec_channels
+        channels = cond_var_channels + cond_time_channels + config.model.loc_spec_channels # No noise input, only atmospheric vars, dates, and location parameters
 
         logger.info("&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&")
         logger.info(" >> >> >> INSIDE DET cNCSNpp channels: %d, cond_var_channels: %d, cond_time_channels: %d, output_channels: %d, loc_spec_channels: %d", channels, cond_var_channels, cond_time_channels, output_channels, config.model.loc_spec_channels)
@@ -200,7 +200,7 @@ class cNCSNpp(nn.Module):
         # Combine modeled data and conditioning inputs
         #x = torch.cat([x, cond], dim=1)
 
-        logger.info(f" >> >> INSIDE DET CNCSNPP forward x={x.shape} {type(x)}, cond={cond.shape} {type(cond)}")
+        logger.info(f" >> >> INSIDE DET CNCSNPP forward x={x.shape} {type(x)}, cond={cond.shape} {type(cond)}, time_cond={time_cond.shape} {time_cond}")
         x = cond
         modules = self.all_modules
         m_idx = 0
@@ -212,7 +212,7 @@ class cNCSNpp(nn.Module):
         input_pyramid = x if self.config.model.progressive_input != "none" else None
 
         # Downsampling tower
-        logger.info(f" >> >> INSIDE DET CNCSNPP forward x={x.shape}")
+        #logger.info(f" >> >> INSIDE DET CNCSNPP forward x={x.shape}")
         hs = [modules[m_idx](x)]; m_idx += 1
         for i_level in range(self.num_resolutions):
             for _ in range(self.num_res_blocks):

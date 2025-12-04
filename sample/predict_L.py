@@ -32,6 +32,7 @@ from src.data_scripts.collate_np_per_var.data_module import LightningDataModule
 
 from src.lightningModuleEMA import ScoreModelLightningModule
 from src.cncsnpp import cNCSNpp  # noqa: F401
+from src.deterministic_models import cncsnpp
 from sampling import get_sampling_fn
 from src.sde_lib import VESDE, VPSDE, subVPSDE
 from src.data_scripts.data_utils import datafile_path
@@ -242,8 +243,14 @@ def main(
 ):
     print(" >> INSIDE predict_L.main input_transform_dataset", input_transform_dataset)
     
+    logger.info(" << << << experiment name >> >> >> %s", experiment_name)
+    print(" << << << experiment name >> >> >>", experiment_name)
+
     train_config = get_config()
     config = load_sampling_config(workdir, dataset, train_config, experiment_name)
+
+    logger.info(" << << << config.experiment name >> >> >> %s", config.experiment_name)
+    print(" << << << config.experiment name >> >> >>", config.experiment_name)
 
     with config.unlocked():
         if num_scales is not None:
@@ -256,10 +263,13 @@ def main(
             config.data.dataset_name = dataset
         
         if (experiment_name is not None) or (experiment_name != ''):
-            config.experiment_name = train_config.experiment_name
+            config.experiment_name = experiment_name
         if (experiment_name in [None, '']):
             experiment_name = train_config.experiment_name
             config.experiment_name = train_config.experiment_name
+
+        logger.info(" << << << config.experiment name >> >> >> %s", config.experiment_name)
+        print(" << << << config.experiment name >> >> >>", config.experiment_name)
         
         if input_transform_dataset is not None:
             config.data.input_transform_dataset = dataset
@@ -288,33 +298,18 @@ def main(
     with open(sampling_config_path, "w") as f:
         f.write(config.to_yaml())
 
-    if not 'per_var' in LightningDataModule.__module__:
-        data_module = LightningDataModule(
-            active_dataset_name=config.data.dataset_name,
-            model_src_dataset_name=config.data.dataset_name,
-            input_transform_dataset_name=config.data.dataset_name,
-            input_transform_key=config.data.input_transform_key,
-            target_transform_key=config.data.target_transform_key, # Orig, target_transform_keys = target_xfm_keys
-            transform_dir=os.path.join(workdir, 'transforms'),
-            batch_size=config.eval.batch_size,
-            filename=filename,
-            include_time_inputs=False,
-            evaluation=False,
-            shuffle=False
-        )
-    else:
-        data_module = LightningDataModule(
-            config=config,
-            active_dataset_name=config.data.dataset_name,
-            model_src_dataset_name=config.data.dataset_name,
-            input_transform_dataset_name=config.data.dataset_name,
-            transform_dir=os.path.join(workdir, 'transforms'),
-            batch_size=config.eval.batch_size, #config.training.batch_size,
-            filename=filename,
-            include_time_inputs=False,
-            evaluation=False,
-            shuffle=False
-        )
+    data_module = LightningDataModule(
+        config=config,
+        active_dataset_name=config.data.dataset_name,
+        model_src_dataset_name=config.data.dataset_name,
+        input_transform_dataset_name=config.data.dataset_name,
+        transform_dir=os.path.join(workdir, 'transforms'),
+        batch_size=config.eval.batch_size, #config.training.batch_size,
+        filename=filename,
+        include_time_inputs=False,
+        evaluation=False,
+        shuffle=False
+    )
     
     start_time = time.time()
     data_module.setup("test")
@@ -322,12 +317,11 @@ def main(
     print(f" <> INSIDE predict_L data_module.setup('test') {end_time-start_time:.3f} seconds")
 
     eval_dl = data_module.test_dataloader()
-    with config.unlocked():
-        x_init = next(iter(eval_dl))
-        config.data.image_size = x_init[0].shape[-1]
+    x_init = next(iter(eval_dl))
+    config.data.image_size = x_init[0].shape[-1]
 
     ckpt_filename = os.path.join(workdir, "checkpoints", config.data.dataset_name, config.experiment_name, checkpoint)
-    logger.info(f"Loading model from {ckpt_filename}")
+    logger.info(f" <> Loading model from {ckpt_filename}")
     score_model, sampling_fn, target_var = load_model(config, ckpt_filename)
 
     print(" >> INSIDE main score_model", type(score_model), dir(score_model))

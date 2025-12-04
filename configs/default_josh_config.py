@@ -23,6 +23,10 @@ def get_default_configs():
     training.continuous = True
     training.reduce_mean = False
     training.random_crop_size = 0
+    training.det_loss_type = '' # Use WMSE_MS-SSIM for weighted-MSE loss. MUST USE data.predictands.target_transform_keys = ["none"]
+    training.wmse_ms_ssim_alpha = 0.1
+    training.wmse_ms_ssim_beta = 0.15
+    training.wmse_ms_ssim_lam = 0.1
 
     # model
     config.model = model = ml_collections.ConfigDict()
@@ -68,8 +72,8 @@ def get_default_configs():
 
     
     data.predictands = ml_collections.ConfigDict()
-    data.predictands.variables = ["precipitation"]
-    data.predictands.target_transform_keys = ["sqrturrecen"]
+    data.predictands.variables = ("precipitation",)
+    data.predictands.target_transform_keys = ("sqrturrecen",)
 
     data.predictors = ml_collections.ConfigDict()
     #data.predictors.variables = ["specHum850", "specHum700", "specHum500", "specHum250", "temp850", "temp700", "temp500", "temp250", "vort850", "vort700", "vort500", "vort250", "mslp"]
@@ -89,8 +93,8 @@ def get_default_configs():
     optim.weight_decay = 0
     optim.optimizer = 'Adam' # Options: 'Adam', 'SGD', uhhh
     optim.scheduler = 'fixed' # Options: 'fixed', 'decay', 'triangle'
-    optim.lr = 5e-4
-    optim.final_lr = 5e-5
+    optim.lr = 2e-4
+    optim.final_lr = 2e-4
     optim.beta1 = 0.9
     optim.eps = 1e-8
     optim.warmup = 5000

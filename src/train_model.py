@@ -31,8 +31,8 @@ def train(config, workdir, filename, val_filename):
 
     if ((config.deterministic == 'True') or (config.deterministic == 'true') or (config.deterministic == True) or (config.deterministic == 1)):
         config.deterministic = True
-        config.model.name = config.model.name
-        #config.model.name = 'det_'+config.model.name
+        #config.model.name = config.model.name
+        config.model.name = 'det_'+config.model.name
     else:
         config.deterministic = False
     
