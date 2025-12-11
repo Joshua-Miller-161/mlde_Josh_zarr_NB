@@ -132,10 +132,16 @@ class LightningDataModule(pl.LightningDataModule):
             )
             self.val_len = _get_zarr_length(self.val_zarr_path)
 
-            self.dl_kwargs['collate_fn'] = FastCollate(
+            self.train_collate = FastCollate(
                 input_transforms=self.train_transforms,
                 target_transforms=self.train_target_transforms,
-                time_range=self.time_range
+                time_range=self.time_range,
+                random_flip=self.config.data.random_flip,
+            )
+            self.val_collate = FastCollate(
+                input_transforms=self.train_transforms,
+                target_transforms=self.train_target_transforms,
+                time_range=self.time_range,
             )
 
 
@@ -155,10 +161,10 @@ class LightningDataModule(pl.LightningDataModule):
             self.test_len = _get_zarr_length(self.test_zarr_path)
             print(" >> >> INSIDE data_module setup <<TEST>> zarr_len =", self.test_len)
 
-            self.dl_kwargs['collate_fn'] = FastCollate(
+            self.test_collate = FastCollate(
                 input_transforms=self.test_transforms,
                 target_transforms=self.test_target_transforms,
-                time_range=self.time_range
+                time_range=self.time_range,
             )
 
     def train_dataloader(self):
@@ -181,8 +187,9 @@ class LightningDataModule(pl.LightningDataModule):
             self.train_len
         )
 
+        self.dl_kwargs['collate_fn'] = getattr(self, "train_collate", self.dl_kwargs.get('collate_fn'))
         data_loader = DataLoader(xr_dataset, **self.dl_kwargs)
-        
+
         return data_loader
 
     def val_dataloader(self):
@@ -195,9 +202,10 @@ class LightningDataModule(pl.LightningDataModule):
         )
 
         self.dl_kwargs['shuffle'] = False
-        
+        self.dl_kwargs['collate_fn'] = getattr(self, "val_collate", self.dl_kwargs.get('collate_fn'))
+
         data_loader = DataLoader(xr_dataset, **self.dl_kwargs)
-        
+
         return data_loader
 
     def test_dataloader(self):
@@ -211,6 +219,7 @@ class LightningDataModule(pl.LightningDataModule):
 
         self.dl_kwargs['num_workers'] = 0
         self.dl_kwargs['shuffle'] = False
+        self.dl_kwargs['collate_fn'] = getattr(self, "test_collate", self.dl_kwargs.get('collate_fn'))
 
         data_loader = DataLoader(xr_dataset, **self.dl_kwargs)
         
