@@ -7,6 +7,7 @@ import logging
 import numpy as np
 import torch
 import torch.distributed as dist
+from torchvision.transforms import functional as TF
 
 logger = logging.getLogger()
 
@@ -27,7 +28,8 @@ class FastCollate:
             target_transforms=None,
             time_range=None,
             input_variable_order=None,
-            target_variable_order=None
+            target_variable_order=None,
+            random_flip=False,
         ):
         # expected: input_transforms is either None or dict: {var: transform_obj}
         self.input_transforms = input_transforms
@@ -36,6 +38,7 @@ class FastCollate:
         # allow user override of variable order; otherwise deduce from input_transforms or the first batch
         self.input_variable_order = list(input_variable_order) if input_variable_order is not None else None
         self.target_variable_order = list(target_variable_order) if target_variable_order is not None else None
+        self.random_flip = random_flip
 
     def _apply_transform_safe(self, xfm, arr):
         """
@@ -209,5 +212,14 @@ class FastCollate:
             # final conversion to torch
             conds_t = torch.from_numpy(conds)
             targs_t = torch.from_numpy(targs)
+
+            if self.random_flip:
+                if torch.rand(1) < 0.5:
+                    conds_t = TF.hflip(conds_t)
+                    targs_t = TF.hflip(targs_t)
+                if torch.rand(1) < 0.5:
+                    conds_t = TF.vflip(conds_t)
+                    targs_t = TF.vflip(targs_t)
+
             times = np.array([b[2] for b in batch])
             return conds_t, targs_t, times
