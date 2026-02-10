@@ -137,11 +137,13 @@ class LightningDataModule(pl.LightningDataModule):
                 target_transforms=self.train_target_transforms,
                 time_range=self.time_range,
                 random_flip=self.config.data.random_flip,
+                fail_on_nan=getattr(self.config.data, "fail_on_nan", True),
             )
             self.val_collate = FastCollate(
                 input_transforms=self.train_transforms,
                 target_transforms=self.train_target_transforms,
                 time_range=self.time_range,
+                fail_on_nan=getattr(self.config.data, "fail_on_nan", True),
             )
 
 
@@ -165,6 +167,7 @@ class LightningDataModule(pl.LightningDataModule):
                 input_transforms=self.test_transforms,
                 target_transforms=self.test_target_transforms,
                 time_range=self.time_range,
+                fail_on_nan=getattr(self.config.data, "fail_on_nan", True),
             )
 
     def train_dataloader(self):

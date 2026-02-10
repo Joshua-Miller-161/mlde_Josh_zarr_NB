@@ -64,6 +64,7 @@ def get_default_configs():
     data.dataset_name = 'ERA5_IMERG_Med_192x192_2000-2024_indiv_seasons' #'bham64_ccpm-4x_1em_psl-sphum4th-temp4th-vort4th_pr'
     data.image_size = 192
     data.random_flip = False  # Enable random horizontal/vertical flips during training
+    data.fail_on_nan = True  # Abort training/sampling if NaNs are detected in collate input/target data
     data.centered = False
     data.uniform_dequantization = False
     data.input_transform_dataset = None
