@@ -30,6 +30,7 @@ class FastCollate:
             input_variable_order=None,
             target_variable_order=None,
             random_flip=False,
+            fail_on_nan=True,
         ):
         # expected: input_transforms is either None or dict: {var: transform_obj}
         self.input_transforms = input_transforms
@@ -39,6 +40,36 @@ class FastCollate:
         self.input_variable_order = list(input_variable_order) if input_variable_order is not None else None
         self.target_variable_order = list(target_variable_order) if target_variable_order is not None else None
         self.random_flip = random_flip
+        self.fail_on_nan = bool(fail_on_nan)
+
+    def _abort_if_nan(self, arr, tensor_name, var_name=None):
+        """
+        Fail fast on NaNs without creating extra copies of the source array.
+        """
+        if not self.fail_on_nan:
+            return
+
+        # np.isnan is the fastest robust check for float32 data and keeps logic explicit.
+        has_nan = np.isnan(arr).any()
+        if not has_nan:
+            return
+
+        nan_count = int(np.isnan(arr).sum())
+        total_count = int(arr.size)
+        var_txt = f", variable={var_name}" if var_name is not None else ""
+        logger.info(
+            "NaN DETECTED in FastCollate tensor=%s%s shape=%s dtype=%s nan_count=%d total=%d",
+            tensor_name,
+            var_txt,
+            tuple(arr.shape),
+            arr.dtype,
+            nan_count,
+            total_count,
+        )
+        raise RuntimeError(
+            f"NaN detected in data pipeline: tensor={tensor_name}{var_txt}. "
+            "Aborting to stop training/sampling with invalid inputs."
+        )
 
     def _apply_transform_safe(self, xfm, arr):
         """
@@ -92,7 +123,14 @@ class FastCollate:
            conds (torch.Tensor), targs (torch.Tensor), times (np.array)
         """
         rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
-        start_time = clock.time()
+        total_start_time = clock.time()
+        logger.info(
+            "FastCollate start rank=%d pid=%d batch_size=%d fail_on_nan=%s",
+            rank,
+            os.getpid(),
+            len(batch),
+            self.fail_on_nan,
+        )
 
         # detect dict-mode
         first_cond = batch[0][0]
@@ -135,6 +173,7 @@ class FastCollate:
             # fill conds: vectorized per-variable (one stack per variable)
             for i, v in enumerate(input_vars):
                 var_stack = np.stack([np.asarray(b[0][v]) for b in batch], axis=0).astype(np.float32)  # (B, H, W) or (B, ch, H, W)
+                self._abort_if_nan(var_stack, "inputs_pre_transform", var_name=v)
                 # if returned with channel dim (B,ch,H,W), try to squeeze/reshape into conds
                 if var_stack.ndim == 4:
                     # flatten channel into variable dimension: like C_in*ch
@@ -146,6 +185,7 @@ class FastCollate:
             # fill targs
             for j, v in enumerate(target_vars):
                 tvar_stack = np.stack([np.asarray(b[1][v]) for b in batch], axis=0).astype(np.float32)
+                self._abort_if_nan(tvar_stack, "targets_pre_transform", var_name=v)
                 if tvar_stack.ndim == 4:
                     ch_dim = tvar_stack.shape[1]
                     targs[:, j*ch_dim:(j+1)*ch_dim, :, :] = tvar_stack
@@ -157,7 +197,7 @@ class FastCollate:
 
             # apply per-variable transforms (vectorized across batch)
             # For input transforms: iterate over input_vars and transform conds[:,i,...]
-            start_time = clock.time()
+            input_xfm_start_time = clock.time()
             if self.input_transforms is not None:
                 # handle case where variables may have multiple channels per var (rare)
                 for i, v in enumerate(input_vars):
@@ -166,6 +206,7 @@ class FastCollate:
                     # We assume single-channel per variable; if multi-channel, the transform should accept (B,ch,H,W).
                     var_slice = conds[:, i, ...] if conds.ndim == 4 else conds[:, i, ...]
                     transformed = self._apply_transform_safe(xfm, var_slice)
+                    self._abort_if_nan(transformed, "inputs_post_transform", var_name=v)
                     # transformed should be (B,H,W) or (B,1,H,W) or (B,ch,H,W)
                     if transformed.ndim == 3:
                         conds[:, i, :, :] = transformed
@@ -179,15 +220,16 @@ class FastCollate:
                         else:
                             raise RuntimeError("Unexpected transformed shape for input var %s: %s" % (v, str(transformed.shape)))
             end_time = clock.time()
-            #logger.info(" >> >> INSIDE FastCollate: input transforms applied (rank %d pid %d) time: %s", rank, os.getpid(), str(round(end_time - start_time, 7)))
+            #logger.info(" >> >> INSIDE FastCollate: input transforms applied (rank %d pid %d) time: %s", rank, os.getpid(), str(round(end_time - input_xfm_start_time, 7)))
 
             # apply target transforms
-            start_time = clock.time()
+            target_xfm_start_time = clock.time()
             if self.target_transforms is not None:
                 for j, v in enumerate(target_vars):
                     xfm = self.target_transforms.get(v)
                     t_slice = targs[:, j, ...]
                     transformed_t = self._apply_transform_safe(xfm, t_slice)
+                    self._abort_if_nan(transformed_t, "targets_post_transform", var_name=v)
                     if transformed_t.ndim == 3:
                         targs[:, j, :, :] = transformed_t
                     elif transformed_t.ndim == 4 and transformed_t.shape[1] == 1:
@@ -199,7 +241,7 @@ class FastCollate:
                         else:
                             raise RuntimeError("Unexpected transformed shape for target var %s: %s" % (v, str(transformed_t.shape)))
             end_time = clock.time()
-            #logger.info(" >> >> INSIDE FastCollate: target transforms applied (rank %d pid %d) time: %s", rank, os.getpid(), str(round(end_time - start_time, 7)))
+            #logger.info(" >> >> INSIDE FastCollate: target transforms applied (rank %d pid %d) time: %s", rank, os.getpid(), str(round(end_time - target_xfm_start_time, 7)))
 
             # add time channels if requested
             if self.time_range is not None:
@@ -207,7 +249,11 @@ class FastCollate:
                 cond_time_torch = DownscalingDataset.time_to_tensor(times, conds.shape, self.time_range)
                 if cond_time_torch is not None:
                     cond_time_np = cond_time_torch.numpy()  # (B,3,H,W)
+                    self._abort_if_nan(cond_time_np, "time_channels")
                     conds = np.concatenate([conds, cond_time_np], axis=1)
+
+            self._abort_if_nan(conds, "inputs_final")
+            self._abort_if_nan(targs, "targets_final")
 
             # final conversion to torch
             conds_t = torch.from_numpy(conds)
@@ -222,4 +268,13 @@ class FastCollate:
                     targs_t = TF.vflip(targs_t)
 
             times = np.array([b[2] for b in batch])
+            logger.info(
+                "FastCollate done rank=%d pid=%d batch_size=%d cond_shape=%s targ_shape=%s total_time_s=%.5f",
+                rank,
+                os.getpid(),
+                len(batch),
+                tuple(conds_t.shape),
+                tuple(targs_t.shape),
+                clock.time() - total_start_time,
+            )
             return conds_t, targs_t, times
