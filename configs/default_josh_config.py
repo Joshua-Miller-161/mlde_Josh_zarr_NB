@@ -23,10 +23,17 @@ def get_default_configs():
     training.continuous = True
     training.reduce_mean = False
     training.random_crop_size = 0
-    training.det_loss_type = '' # Use WMSE_MS-SSIM for weighted-MSE loss. MUST USE data.predictands.target_transform_keys = ["none"]
+    training.det_loss_type = '' # Use WMSE_MS-SSIM for weighted-MSE loss, or ASYM for Doury et al. (2024). MUST USE data.predictands.target_transform_keys = ["none"]
     training.wmse_ms_ssim_alpha = 0.1
     training.wmse_ms_ssim_beta = 0.15
     training.wmse_ms_ssim_lam = 0.1
+    # Doury et al. (2024) ASYM loss settings
+    # gamma params path is auto-constructed as:
+    #   $WORK_DIR/doury_gamma_params/<dataset_name>/<train_filename_stem>/parameters.npz
+    training.asym_train_filename = ''  # filename of training zarr, e.g. 'train_summer.zarr'
+    training.asym_rain_threshold = 1.0  # wet/dry threshold (same units as precipitation data)
+    training.asym_lat_chunk = 10        # lat tile size for gamma fitting
+    training.asym_lon_chunk = 10        # lon tile size for gamma fitting
 
     # model
     config.model = model = ml_collections.ConfigDict()
