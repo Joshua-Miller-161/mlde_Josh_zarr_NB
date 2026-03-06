@@ -23,10 +23,16 @@ def get_default_configs():
     training.continuous = True
     training.reduce_mean = False
     training.random_crop_size = 0
-    training.det_loss_type = '' # Use WMSE_MS-SSIM for weighted-MSE loss. MUST USE data.predictands.target_transform_keys = ["none"]
+    training.det_loss_type = '' # Options: 'WMSE_MS-SSIM', 'ASYM'. MUST USE data.predictands.target_transform_keys = ["none"]
     training.wmse_ms_ssim_alpha = 0.1
     training.wmse_ms_ssim_beta = 0.15
     training.wmse_ms_ssim_lam = 0.1
+    # Doury et al. (2024) ASYM loss settings
+    training.asym_train_filename = ''   # zarr filename for gamma fitting (e.g. 'train_summer.zarr').
+                                        # Leave empty to reuse the ML training file (FLAGS.filename).
+    training.asym_rain_threshold = 1.0  # wet-day threshold (same units as data, e.g. mm/hr)
+    training.asym_lat_chunk = 16        # spatial tile size (lat) for gamma fitting
+    training.asym_lon_chunk = 16        # spatial tile size (lon) for gamma fitting
 
     # model
     config.model = model = ml_collections.ConfigDict()
